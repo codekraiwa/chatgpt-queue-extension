@@ -43,3 +43,25 @@ This bumps `manifest.json`, commits, tags, pushes, and GitHub Actions creates a 
 For a manually loaded unpacked extension, Git can update the files but Chrome still requires **Reload** to reload the extension code.
 
 If you want truly automatic updates without pressing Reload, the normal route is publishing via the Chrome Web Store or another supported packaged-extension update channel.
+
+
+## One-click local updater (macOS)
+
+The repository includes `Update ChatGPT Queue.command`.
+
+After the first setup, double-click that file to:
+
+1. fetch the latest commit from GitHub
+2. fast-forward the local repository
+3. read the current extension version
+4. open `chrome://restart` so Chrome restarts and reloads the unpacked extension from disk
+
+The updater refuses to overwrite tracked files with uncommitted local changes.
+
+If macOS blocks the file the first time, run:
+
+```bash
+chmod +x 'Update ChatGPT Queue.command'
+```
+
+Then double-click it in Finder.
