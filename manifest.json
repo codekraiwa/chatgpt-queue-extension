@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Queue",
-  "version": "1.8.0",
-  "description": "ChatGPT prompt queue with customizable completion sounds and stronger background attention.",
+  "version": "1.8.1",
+  "description": "ChatGPT prompt queue with loud customizable completion alarms and stronger background attention.",
   "permissions": [
     "storage",
     "notifications",
