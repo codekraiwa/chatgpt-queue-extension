@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Queue",
-  "version": "1.7.2",
-  "description": "ChatGPT prompt queue with persistent high-priority completion notifications and reliable background sound.",
+  "version": "1.7.3",
+  "description": "ChatGPT prompt queue with response-settle protection, reliable completion sound, and notifications.",
   "permissions": [
     "storage",
     "notifications",
