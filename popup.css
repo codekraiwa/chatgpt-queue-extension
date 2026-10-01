@@ -398,3 +398,14 @@ h1 {
   color:var(--subtle);
   font-size:10.5px;
 }
+
+
+.setting-row {
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  padding:12px 0; border-bottom:1px solid rgba(127,127,127,.18); cursor:pointer;
+}
+.setting-row span { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.setting-row small { color:#9b9b9b; line-height:1.35; }
+.setting-row input[type="checkbox"] { width:18px; height:18px; flex:0 0 auto; accent-color:#10a37f; }
+.settings-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+.wide-button.secondary { background:#242424; border:1px solid #444; }
