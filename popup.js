@@ -6,6 +6,46 @@ const tabsView = document.getElementById("tabs-view");
 const settingsView = document.getElementById("settings-view");
 const pageTitle = document.getElementById("page-title");
 const backBtn = document.getElementById("back-btn");
+const settingNotify = document.getElementById("setting-notify");
+const settingInactive = document.getElementById("setting-inactive");
+const settingSound = document.getElementById("setting-sound");
+const testNotificationBtn = document.getElementById("test-notification");
+const testSoundBtn = document.getElementById("test-sound");
+const settingsStatus = document.getElementById("settings-status");
+
+async function loadGlobalSettings() {
+  const res = await chrome.runtime.sendMessage({ type: "CQ_GET_GLOBAL_SETTINGS" });
+  const gs = res?.settings || {};
+  settingNotify.checked = gs.notifyWhenFinished !== false;
+  settingInactive.checked = gs.notifyOnlyWhenInactive !== false;
+  settingSound.checked = gs.playSound !== false;
+}
+
+async function saveGlobalSettings() {
+  settingsStatus.textContent = "Saving…";
+  const res = await chrome.runtime.sendMessage({
+    type: "CQ_SET_GLOBAL_SETTINGS",
+    settings: {
+      notifyWhenFinished: settingNotify.checked,
+      notifyOnlyWhenInactive: settingInactive.checked,
+      playSound: settingSound.checked
+    }
+  });
+  settingsStatus.textContent = res?.ok ? "Saved" : "Could not save settings";
+  setTimeout(() => { if (settingsStatus.textContent === "Saved") settingsStatus.textContent = ""; }, 1200);
+}
+
+[settingNotify, settingInactive, settingSound].forEach(el => el.addEventListener("change", saveGlobalSettings));
+
+testNotificationBtn.onclick = async () => {
+  await chrome.runtime.sendMessage({ type: "CQ_TEST_NOTIFICATION" });
+  settingsStatus.textContent = "Test notification sent";
+};
+
+testSoundBtn.onclick = async () => {
+  await chrome.runtime.sendMessage({ type: "CQ_TEST_SOUND" });
+  settingsStatus.textContent = "Test sound played";
+};
 
 refreshBtn.onclick = load;
 
@@ -16,6 +56,7 @@ settingsBtn.onclick = () => {
   refreshBtn.classList.add("hidden");
   settingsBtn.classList.add("hidden");
   pageTitle.textContent = "Settings";
+  loadGlobalSettings();
 };
 
 backBtn.onclick = () => {
