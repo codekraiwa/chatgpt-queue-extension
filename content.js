@@ -134,6 +134,10 @@
     return nativeChatTitle || stripQueueTitle(document.title);
   }
 
+  function isPageActive() {
+    return document.visibilityState === "visible" && document.hasFocus();
+  }
+
   function formatTime(ts) {
     if (!ts) return "";
     try {
@@ -571,12 +575,18 @@
   function onResponseFinished() {
     if (batchActive && awaitingFinalResponse && !state.queue.length) {
       awaitingFinalResponse = false;
-      notify(`Queue finished — ${chatLabel()}`, `${batchCompleted} queued task${batchCompleted === 1 ? "" : "s"} completed.`);
-      markDone(); batchActive = false; batchCompleted = 0; reportStatus(); return;
+      markDone();
+      batchActive = false;
+      const completedCount = batchCompleted;
+      batchCompleted = 0;
+      reportStatus();
+      notify(`Queue finished — ${chatLabel()}`, `${completedCount} queued task${completedCount === 1 ? "" : "s"} completed.`);
+      return;
     }
     if (state.queue.length) { maybeRunQueue(); return; }
+    markDone();
+    reportStatus();
     notify(`ChatGPT finished — ${chatLabel()}`, "The current response has completed.");
-    markDone(); reportStatus();
   }
 
   function updateGenerationState() {
