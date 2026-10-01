@@ -40,6 +40,10 @@ if [ -z "$BRANCH" ]; then
   BRANCH="master"
 fi
 
+# macOS requires .command files to be executable. Ignore executable-bit-only
+# changes so this updater does not mark itself as a dirty tracked file.
+git config core.fileMode false
+
 echo "Checking GitHub..."
 git fetch origin "$BRANCH" --quiet
 
