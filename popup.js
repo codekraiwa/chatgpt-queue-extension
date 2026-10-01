@@ -14,11 +14,21 @@ const testSoundBtn = document.getElementById("test-sound");
 const settingsStatus = document.getElementById("settings-status");
 
 async function loadGlobalSettings() {
-  const res = await chrome.runtime.sendMessage({ type: "CQ_GET_GLOBAL_SETTINGS" });
+  const [res, notificationStatus] = await Promise.all([
+    chrome.runtime.sendMessage({ type: "CQ_GET_GLOBAL_SETTINGS" }),
+    chrome.runtime.sendMessage({ type: "CQ_GET_NOTIFICATION_STATUS" })
+  ]);
   const gs = res?.settings || {};
   settingNotify.checked = gs.notifyWhenFinished !== false;
   settingInactive.checked = gs.notifyOnlyWhenInactive !== false;
   settingSound.checked = gs.playSound !== false;
+
+  if (notificationStatus?.level && notificationStatus.level !== "granted") {
+    settingsStatus.textContent = `Chrome notification permission: ${notificationStatus.level}. Check macOS System Settings → Notifications → Google Chrome.`;
+    settingsStatus.classList.add("warning");
+  } else {
+    settingsStatus.classList.remove("warning");
+  }
 }
 
 async function saveGlobalSettings() {
@@ -38,8 +48,15 @@ async function saveGlobalSettings() {
 [settingNotify, settingInactive, settingSound].forEach(el => el.addEventListener("change", saveGlobalSettings));
 
 testNotificationBtn.onclick = async () => {
-  await chrome.runtime.sendMessage({ type: "CQ_TEST_NOTIFICATION" });
-  settingsStatus.textContent = "Test notification sent";
+  settingsStatus.classList.remove("warning");
+  settingsStatus.textContent = "Testing notification…";
+  const res = await chrome.runtime.sendMessage({ type: "CQ_TEST_NOTIFICATION" });
+  if (res?.ok) {
+    settingsStatus.textContent = "Notification created by Chrome. If you still do not see it, enable Google Chrome in macOS System Settings → Notifications.";
+  } else {
+    settingsStatus.classList.add("warning");
+    settingsStatus.textContent = `Notification failed${res?.permission ? ` (${res.permission})` : ""}: ${res?.error || "unknown error"}`;
+  }
 };
 
 testSoundBtn.onclick = async () => {
