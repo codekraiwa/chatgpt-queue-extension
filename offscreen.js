@@ -31,62 +31,58 @@ function tone(ctx, destination, frequency, start, duration, volume, type = "sine
 
 function pattern(preset, ctx, destination, start, volume) {
   if (preset === "soft") {
-    tone(ctx, destination, 620, start, 0.18, volume * 0.7);
-    return 0.24;
+    tone(ctx, destination, 720, start, 0.11, volume * 0.55, "sine");
+    return 0.14;
   }
   if (preset === "bell") {
-    tone(ctx, destination, 880, start, 0.22, volume, "sine");
-    tone(ctx, destination, 1320, start + 0.02, 0.28, volume * 0.45, "sine");
-    return 0.38;
+    tone(ctx, destination, 980, start, 0.12, volume, "sine");
+    tone(ctx, destination, 1480, start, 0.13, volume * 0.6, "sine");
+    return 0.16;
   }
   if (preset === "alert") {
-    tone(ctx, destination, 760, start, 0.15, volume, "square");
-    tone(ctx, destination, 1140, start, 0.15, volume * 0.8, "sawtooth");
-    tone(ctx, destination, 760, start + 0.18, 0.15, volume, "square");
-    tone(ctx, destination, 1140, start + 0.18, 0.15, volume * 0.8, "sawtooth");
-    tone(ctx, destination, 980, start + 0.36, 0.20, volume, "square");
-    tone(ctx, destination, 1470, start + 0.36, 0.20, volume * 0.72, "sawtooth");
-    return 0.56;
+    // Very short, high-presence burst. Layered mids cut through laptop speakers.
+    tone(ctx, destination, 880, start, 0.115, volume, "square");
+    tone(ctx, destination, 1320, start, 0.115, volume * 0.92, "sawtooth");
+    tone(ctx, destination, 1760, start, 0.10, volume * 0.72, "square");
+    return 0.14;
   }
   if (preset === "alarm") {
-    tone(ctx, destination, 700, start, 0.18, volume, "square");
-    tone(ctx, destination, 1050, start, 0.18, volume * 0.85, "sawtooth");
-    tone(ctx, destination, 700, start + 0.22, 0.18, volume, "square");
-    tone(ctx, destination, 1050, start + 0.22, 0.18, volume * 0.85, "sawtooth");
-    tone(ctx, destination, 840, start + 0.44, 0.24, volume, "square");
-    tone(ctx, destination, 1260, start + 0.44, 0.24, volume * 0.85, "sawtooth");
-    return 0.78;
+    // Punch: one compact transient, not a long alarm.
+    tone(ctx, destination, 740, start, 0.14, volume, "square");
+    tone(ctx, destination, 1110, start, 0.14, volume, "sawtooth");
+    tone(ctx, destination, 1480, start + 0.015, 0.12, volume * 0.82, "square");
+    return 0.17;
   }
-  // chime (default)
-  tone(ctx, destination, 740, start, 0.14, volume, "sine");
-  tone(ctx, destination, 980, start + 0.16, 0.16, volume * 0.82, "sine");
-  return 0.38;
+  // chime
+  tone(ctx, destination, 820, start, 0.10, volume * 0.9, "sine");
+  tone(ctx, destination, 1220, start + 0.055, 0.10, volume * 0.82, "sine");
+  return 0.16;
 }
 
 async function playBeep(msg = {}) {
   try {
     const ctx = await getAudioContext();
-    const preset = ["soft", "chime", "bell", "alert", "alarm"].includes(msg.preset) ? msg.preset : "alarm";
-    const volumePct = Math.max(10, Math.min(200, Number(msg.volume ?? 150)));
-    const repeats = Math.max(1, Math.min(5, Number(msg.repeats || 2)));
+    const preset = ["soft", "chime", "bell", "alert", "alarm"].includes(msg.preset) ? msg.preset : "alert";
+    const volumePct = Math.max(10, Math.min(400, Number(msg.volume ?? 100)));
+    const repeats = Math.max(1, Math.min(5, Number(msg.repeats || 1)));
 
     // Loud master chain: boost into a compressor/limiter so it is much more
     // noticeable without uncontrolled digital clipping.
     const master = ctx.createGain();
     const compressor = ctx.createDynamicsCompressor();
-    master.gain.value = 1.35 * (volumePct / 100);
-    compressor.threshold.value = -10;
+    master.gain.value = 2.5 * (volumePct / 100);
+    compressor.threshold.value = -18;
     compressor.knee.value = 8;
-    compressor.ratio.value = 12;
+    compressor.ratio.value = 20;
     compressor.attack.value = 0.003;
-    compressor.release.value = 0.18;
+    compressor.release.value = 0.08;
     master.connect(compressor);
     compressor.connect(ctx.destination);
 
-    const voiceLevel = preset === "soft" ? 0.18 : 0.72;
+    const voiceLevel = preset === "soft" ? 0.22 : 1.0;
     let cursor = ctx.currentTime + 0.02;
     for (let i = 0; i < repeats; i++) {
-      cursor += pattern(preset, ctx, master, cursor, voiceLevel) + 0.18;
+      cursor += pattern(preset, ctx, master, cursor, voiceLevel) + 0.10;
     }
   } catch (err) {
     console.warn("ChatGPT Queue: offscreen beep error", err);
