@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Queue",
-  "version": "1.5.1",
-  "description": "ChatGPT prompt queue with live tab favicon status, fixed cycle state, notifications, and last-completed time.",
+  "version": "1.6.0",
+  "description": "ChatGPT prompt queue with immediate done detection, live tab status, and reliable background completion beep.",
   "permissions": [
     "storage",
     "notifications",
     "tabs",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "offscreen"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",

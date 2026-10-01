@@ -21,6 +21,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
 
+  if (msg.type === "CQ_BEEP") {
+    playCompletionBeep();
+    sendResponse?.({ ok: true });
+    return;
+  }
+
   if (msg.type === "CQ_NOTIFY" && tabId != null) {
     const id = `cq-${tabId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     notificationToTab.set(id, tabId);
@@ -98,4 +104,39 @@ async function updateBadge() {
   for (const s of tabState.values()) total += Number(s.queueCount || 0);
   await chrome.action.setBadgeText({ text: total ? String(total) : "" });
   await chrome.action.setBadgeBackgroundColor({ color: "#10a37f" });
+}
+
+
+async function ensureOffscreenAudioDocument() {
+  const url = chrome.runtime.getURL("offscreen.html");
+
+  if (chrome.runtime.getContexts) {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ["OFFSCREEN_DOCUMENT"],
+      documentUrls: [url]
+    });
+    if (contexts.length) return;
+  }
+
+  try {
+    await chrome.offscreen.createDocument({
+      url: "offscreen.html",
+      reasons: ["AUDIO_PLAYBACK"],
+      justification: "Play the ChatGPT Queue completion beep."
+    });
+  } catch (err) {
+    // createDocument throws if another worker created it in the meantime.
+    if (!String(err?.message || err).toLowerCase().includes("single offscreen")) {
+      console.warn("ChatGPT Queue: offscreen audio setup failed", err);
+    }
+  }
+}
+
+async function playCompletionBeep() {
+  try {
+    await ensureOffscreenAudioDocument();
+    await chrome.runtime.sendMessage({ type: "CQ_OFFSCREEN_BEEP" });
+  } catch (err) {
+    console.warn("ChatGPT Queue: completion beep failed", err);
+  }
 }

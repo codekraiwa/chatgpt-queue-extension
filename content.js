@@ -34,15 +34,28 @@
   let lastKnownTitle = document.title;
 
   function defaults() { return { queue: [], paused: false, lastFinishedAt: 0, doneUnread: false }; }
-  function defaultSettings() { return { notifyWhenFinished:true, notifyOnlyWhenInactive:true, showStatusInTab:true, showStatusFavicon:true, playSound:false }; }
+  function defaultSettings() { return { notifyWhenFinished:true, notifyOnlyWhenInactive:true, showStatusInTab:true, showStatusFavicon:true, playSound:true, soundEngineVersion:2 }; }
 
   function loadState() {
     try { return { ...defaults(), ...(JSON.parse(localStorage.getItem(STATE_KEY) || "{}")) }; }
     catch { return defaults(); }
   }
   function loadSettings() {
-    try { return { ...defaultSettings(), ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) }; }
-    catch { return defaultSettings(); }
+    try {
+      const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+      const merged = { ...defaultSettings(), ...stored };
+
+      // v2 sound migration: completion beep is enabled once by default.
+      if (stored.soundEngineVersion !== 2) {
+        merged.playSound = true;
+        merged.soundEngineVersion = 2;
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
+      }
+
+      return merged;
+    } catch {
+      return { ...defaultSettings(), playSound:true, soundEngineVersion:2 };
+    }
   }
   function saveState() {
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
@@ -164,7 +177,6 @@
   function faviconState() {
     if (state.paused) return "paused";
     if (generationState === "working") return "working";
-    if (generationState === "settling") return "finishing";
     if (state.queue.length > 0) return "queued";
     if (state.doneUnread) return "done";
     return "idle";
@@ -297,7 +309,6 @@
   function desiredTabPrefix() {
     if (state.paused) return "⏸ Paused";
     if (generationState === "working") return "🔄 Working";
-    if (generationState === "settling") return "⏳ Finishing";
     if (state.queue.length > 0) return `📥 Queue ${state.queue.length}`;
     if (state.doneUnread) return "✅";
     return "😴";
@@ -459,7 +470,6 @@
     if (state.paused) return "paused";
     if (sending) return "sending";
     if (generationState === "working") return "working";
-    if (generationState === "settling") return "finishing";
     if (state.queue.length) return "queued";
     if (state.doneUnread) return "done";
     return "idle";
@@ -470,19 +480,15 @@
     } catch {}
   }
   function notify(title, message, force=false) {
+    // Sound is handled by an extension offscreen document so it also works
+    // when the ChatGPT tab is in the background.
+    if (settings.playSound) {
+      try { chrome.runtime.sendMessage({ type:"CQ_BEEP" }); } catch {}
+    }
+
     if (!settings.notifyWhenFinished && !force) return;
     if (!force && settings.notifyOnlyWhenInactive && isPageActive()) return;
     try { chrome.runtime.sendMessage({ type:"CQ_NOTIFY", title, message }); } catch {}
-    if (settings.playSound) playSound();
-  }
-  function playSound() {
-    try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      const ctx = new Ctx(), osc = ctx.createOscillator(), gain = ctx.createGain();
-      osc.frequency.value = 620; gain.gain.value = 0.035; osc.connect(gain); gain.connect(ctx.destination); osc.start();
-      setTimeout(() => { osc.stop(); ctx.close(); }, 170);
-    } catch {}
   }
 
   function setComposerText(text) {
@@ -554,7 +560,7 @@
 
   async function maybeRunQueue() {
     if (state.paused || sending || !state.queue.length) return;
-    if (generationState === "working" || generationState === "settling" || isGenerating()) return;
+    if (generationState === "working" || isGenerating()) return;
     if (Date.now() - lastSentAt < CFG.minSendGapMs) return;
     if (!batchActive) { batchActive = true; batchCompleted = 0; }
     const item = state.queue[0], ok = await sendItem(item); if (!ok) return;
@@ -575,10 +581,10 @@
 
   function updateGenerationState() {
     const busy = isGenerating();
+
     if (busy) {
       if (generationState !== "working") {
         generationState = "working";
-        generationEndedAt = 0;
         if (state.doneUnread) {
           state.doneUnread = false;
           localStorage.setItem(STATE_KEY, JSON.stringify(state));
@@ -589,9 +595,16 @@
       }
       return;
     }
-    if (generationState === "working") { generationState = "settling"; generationEndedAt = Date.now(); renderBrowserTabTitle(); renderStatusFavicon(); reportStatus(); return; }
-    if (generationState === "settling" && Date.now() - generationEndedAt >= CFG.settleMs) {
-      generationState = "idle"; onResponseFinished(); renderBrowserTabTitle(); renderStatusFavicon(); reportStatus();
+
+    // No Finishing phase. The moment ChatGPT's generating state disappears,
+    // complete the cycle. This avoids background tabs getting stuck waiting
+    // for a throttled settle timer.
+    if (generationState === "working") {
+      generationState = "idle";
+      onResponseFinished();
+      renderBrowserTabTitle();
+      renderStatusFavicon();
+      reportStatus();
     }
   }
 
