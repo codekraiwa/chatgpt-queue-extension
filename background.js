@@ -1,6 +1,25 @@
 const tabState = new Map();
 const notificationToTab = new Map();
 
+const GLOBAL_SETTINGS_DEFAULTS = {
+  notifyWhenFinished: true,
+  notifyOnlyWhenInactive: true,
+  playSound: true
+};
+
+async function getGlobalSettings() {
+  const stored = await chrome.storage.sync.get("cqGlobalSettings");
+  return { ...GLOBAL_SETTINGS_DEFAULTS, ...(stored.cqGlobalSettings || {}) };
+}
+
+async function setGlobalSettings(patch) {
+  const next = { ...(await getGlobalSettings()), ...(patch || {}) };
+  await chrome.storage.sync.set({ cqGlobalSettings: next });
+  const tabs = await chrome.tabs.query({ url: ["https://chatgpt.com/*", "https://chat.openai.com/*"] });
+  await Promise.allSettled(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: "CQ_GLOBAL_SETTINGS_CHANGED", settings: next })));
+  return next;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id ?? msg.tabId;
 
@@ -22,6 +41,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "CQ_BEEP") {
+    playCompletionBeep();
+    sendResponse?.({ ok: true });
+    return;
+  }
+
+  if (msg.type === "CQ_GET_GLOBAL_SETTINGS") {
+    getGlobalSettings().then(settings => sendResponse?.({ ok: true, settings }));
+    return true;
+  }
+
+  if (msg.type === "CQ_SET_GLOBAL_SETTINGS") {
+    setGlobalSettings(msg.settings || {}).then(settings => sendResponse?.({ ok: true, settings }));
+    return true;
+  }
+
+  if (msg.type === "CQ_TEST_NOTIFICATION") {
+    const id = `cq-test-${Date.now()}`;
+    chrome.notifications.create(id, {
+      type: "basic",
+      iconUrl: "icon128.png",
+      title: "ChatGPT Queue",
+      message: "Notifications are working."
+    });
+    sendResponse?.({ ok: true });
+    return;
+  }
+
+  if (msg.type === "CQ_TEST_SOUND") {
     playCompletionBeep();
     sendResponse?.({ ok: true });
     return;
