@@ -48,7 +48,11 @@ async function createSystemNotification(id, title, message) {
         type: "basic",
         iconUrl: chrome.runtime.getURL("icon128.png"),
         title: title || "ChatGPT Queue",
-        message: message || "Task completed."
+        message: message || "Task completed.",
+        expandedMessage: message || "Task completed.",
+        priority: 2,
+        requireInteraction: true,
+        silent: false
       }, notificationId => {
         if (chrome.runtime.lastError) {
           resolve({ ok: false, permission: permission.level, error: chrome.runtime.lastError.message });
@@ -60,6 +64,21 @@ async function createSystemNotification(id, title, message) {
       resolve({ ok: false, permission: permission.level, error: String(err?.message || err) });
     }
   });
+}
+
+async function drawAttentionForTab(tabId) {
+  try {
+    if (tabId != null) {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab?.windowId != null) {
+        const win = await chrome.windows.get(tab.windowId);
+        if (!win.focused) await chrome.windows.update(tab.windowId, { drawAttention: true });
+        return;
+      }
+    }
+    const win = await chrome.windows.getLastFocused();
+    if (win?.id != null && !win.focused) await chrome.windows.update(win.id, { drawAttention: true });
+  } catch {}
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -101,7 +120,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "CQ_TEST_NOTIFICATION") {
     const id = `cq-test-${Date.now()}`;
     createSystemNotification(id, "ChatGPT Queue", "Notifications are working.")
-      .then(result => sendResponse?.(result));
+      .then(async result => {
+        if (result.ok) await drawAttentionForTab(null);
+        sendResponse?.(result);
+      });
     return true;
   }
 
@@ -120,8 +142,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const id = `cq-${tabId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     notificationToTab.set(id, tabId);
     createSystemNotification(id, msg.title || "ChatGPT Queue", msg.message || "Task completed.")
-      .then(result => {
+      .then(async result => {
         if (!result.ok) notificationToTab.delete(id);
+        else await drawAttentionForTab(tabId);
         sendResponse?.(result);
       });
     return true;
