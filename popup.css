@@ -411,3 +411,8 @@ h1 {
 .wide-button.secondary { background:#242424; border:1px solid #444; }
 
 .settings-note.warning { color:#ff9d76; }
+
+.setting-control { display:flex; flex-direction:column; gap:7px; padding:10px 0; }
+.setting-control label { font-weight:600; }
+.setting-control select, .setting-control input[type="range"] { width:100%; }
+.setting-control select { box-sizing:border-box; background:#242424; color:#f5f5f5; border:1px solid #444; border-radius:9px; padding:8px 10px; font:inherit; }
