@@ -966,6 +966,7 @@
     else if(msg.command==="runNext"){state.paused=false;generationState="idle";lastSentAt=0;saveState();maybeRunQueue();sendResponse({ok:true});}
     else if(msg.command==="pause"){state.paused=true;saveState();sendResponse({ok:true});}
     else if(msg.command==="resume"){state.paused=false;saveState();maybeRunQueue();sendResponse({ok:true});}
+    else if(msg.command==="ackDone"){markDoneSeen();sendResponse({ok:true});}
   });
 
   openDB().then(()=>{loadGlobalSettings();ensureHeaderButton();attachComposerObserver();startTitleGuard();startFaviconGuard();renderBrowserTabTitle();renderStatusFavicon();reportStatus();});
