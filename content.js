@@ -27,6 +27,7 @@
   let lastSentAt = 0;
   let generationState = "idle";
   let generationEndedAt = 0;
+  let completionSignature = "";
   let batchActive = false;
   let batchCompleted = 0;
   let awaitingFinalResponse = false;
@@ -499,6 +500,17 @@
     const stream = document.querySelector('[data-is-streaming="true"],[data-streaming="true"]');
     return !!(stream && stream.offsetParent !== null);
   }
+
+  function latestAssistantSignature() {
+    const messages = [...document.querySelectorAll('[data-message-author-role="assistant"]')];
+    const last = messages[messages.length - 1];
+    if (!last) return "no-assistant";
+
+    const text = (last.innerText || last.textContent || "").trim();
+    const tail = text.slice(-160);
+    const childCount = last.querySelectorAll("*").length;
+    return `${text.length}:${childCount}:${tail}`;
+  }
   function currentStatus() {
     if (state.paused) return "paused";
     if (sending) return "sending";
@@ -622,6 +634,9 @@
     const busy = isGenerating();
 
     if (busy) {
+      generationEndedAt = 0;
+      completionSignature = "";
+
       if (generationState !== "working") {
         generationState = "working";
         if (state.doneUnread) {
@@ -635,11 +650,25 @@
       return;
     }
 
-    // No Finishing phase. The moment ChatGPT's generating state disappears,
-    // complete the cycle. This avoids background tabs getting stuck waiting
-    // for a throttled settle timer.
     if (generationState === "working") {
+      // ChatGPT can remove the Stop button slightly before the final assistant
+      // DOM has finished rendering. Keep the tab in Working internally until
+      // the latest assistant message has remained unchanged for settleMs.
+      // This prevents the next queued prompt from being sent into that gap.
+      const now = Date.now();
+      const signature = latestAssistantSignature();
+
+      if (!generationEndedAt || signature !== completionSignature) {
+        generationEndedAt = now;
+        completionSignature = signature;
+        return;
+      }
+
+      if (now - generationEndedAt < CFG.settleMs) return;
+
       generationState = "idle";
+      generationEndedAt = 0;
+      completionSignature = "";
       onResponseFinished();
       renderBrowserTabTitle();
       renderStatusFavicon();
