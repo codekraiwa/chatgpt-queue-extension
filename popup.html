@@ -23,20 +23,15 @@
 
   <main id="settings-view" class="settings-view hidden">
     <div class="settings-card">
-      <div class="settings-title">Browser tab status</div>
-      <div class="settings-copy">
-        Browser tabs now show a live status icon without opening the extension:
-        <div class="state-demo">
-          <span>🟠 Working</span>
-          <span>✅ Done</span>
-          <span>Ⓩ Idle</span>
-          <span>🔵 Queue</span>
-          <span>⏸ Paused</span>
-        </div>
+      <div class="settings-title">Notifications & sound</div>
+      <label class="setting-row"><span><strong>Notify when finished</strong><small>Show a Chrome notification when a response completes.</small></span><input id="setting-notify" type="checkbox"></label>
+      <label class="setting-row"><span><strong>Only when tab isn't active</strong><small>Suppress completion notifications while you are already viewing that tab.</small></span><input id="setting-inactive" type="checkbox"></label>
+      <label class="setting-row"><span><strong>Completion sound</strong><small>Play a two-tone beep even when ChatGPT is in a background tab.</small></span><input id="setting-sound" type="checkbox"></label>
+      <div class="settings-actions">
+        <button id="test-notification" class="wide-button secondary">Test notification</button>
+        <button id="test-sound" class="wide-button secondary">Test sound</button>
       </div>
-      <p class="settings-note">
-        Per-chat notification switches remain inside each ChatGPT Queue panel.
-      </p>
+      <p id="settings-status" class="settings-note"></p>
       <button id="back-btn" class="wide-button">Back to tabs</button>
     </div>
   </main>
