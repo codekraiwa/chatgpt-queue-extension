@@ -5,15 +5,29 @@ const GLOBAL_SETTINGS_DEFAULTS = {
   notifyWhenFinished: true,
   notifyOnlyWhenInactive: true,
   playSound: true,
-  soundPreset: 'chime',
-  soundVolume: 70,
-  soundRepeats: 1,
+  soundPreset: 'alarm',
+  soundVolume: 150,
+  soundRepeats: 2,
+  loudSoundVersion: 1,
   strongAttention: true
 };
 
 async function getGlobalSettings() {
   const stored = await chrome.storage.sync.get('cqGlobalSettings');
-  return { ...GLOBAL_SETTINGS_DEFAULTS, ...(stored.cqGlobalSettings || {}) };
+  const current = stored.cqGlobalSettings || {};
+  const merged = { ...GLOBAL_SETTINGS_DEFAULTS, ...current };
+
+  // One-time loud-sound migration for existing installs that still carry
+  // the older quiet defaults. Users can change these again afterwards.
+  if (current.loudSoundVersion !== 1) {
+    merged.soundPreset = 'alarm';
+    merged.soundVolume = 150;
+    merged.soundRepeats = 2;
+    merged.loudSoundVersion = 1;
+    await chrome.storage.sync.set({ cqGlobalSettings: merged });
+  }
+
+  return merged;
 }
 
 async function setGlobalSettings(patch) {
@@ -273,9 +287,9 @@ async function playCompletionBeep(settings = {}) {
     await ensureOffscreenAudioDocument();
     await chrome.runtime.sendMessage({
       type: "CQ_OFFSCREEN_BEEP",
-      preset: settings.soundPreset || 'chime',
-      volume: Number(settings.soundVolume ?? 70),
-      repeats: Math.max(1, Math.min(3, Number(settings.soundRepeats || 1)))
+      preset: settings.soundPreset || 'alarm',
+      volume: Number(settings.soundVolume ?? 150),
+      repeats: Math.max(1, Math.min(5, Number(settings.soundRepeats || 2)))
     });
   } catch (err) {
     console.warn("ChatGPT Queue: completion beep failed", err);
