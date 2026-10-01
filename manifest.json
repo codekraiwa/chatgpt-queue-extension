@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Queue",
-  "version": "1.7.0",
-  "description": "ChatGPT prompt queue with live tab status, global notifications, and reliable background completion sound.",
+  "version": "1.7.1",
+  "description": "ChatGPT prompt queue with reliable completion sound and diagnosable Chrome notifications.",
   "permissions": [
     "storage",
     "notifications",
