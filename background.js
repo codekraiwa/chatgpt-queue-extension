@@ -4,11 +4,15 @@ const notificationToTab = new Map();
 const GLOBAL_SETTINGS_DEFAULTS = {
   notifyWhenFinished: true,
   notifyOnlyWhenInactive: true,
-  playSound: true
+  playSound: true,
+  soundPreset: 'chime',
+  soundVolume: 70,
+  soundRepeats: 1,
+  strongAttention: true
 };
 
 async function getGlobalSettings() {
-  const stored = await chrome.storage.sync.get("cqGlobalSettings");
+  const stored = await chrome.storage.sync.get('cqGlobalSettings');
   return { ...GLOBAL_SETTINGS_DEFAULTS, ...(stored.cqGlobalSettings || {}) };
 }
 
@@ -16,9 +20,10 @@ async function setGlobalSettings(patch) {
   const next = { ...(await getGlobalSettings()), ...(patch || {}) };
   await chrome.storage.sync.set({ cqGlobalSettings: next });
   const tabs = await chrome.tabs.query({ url: ["https://chatgpt.com/*", "https://chat.openai.com/*"] });
-  await Promise.allSettled(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: "CQ_GLOBAL_SETTINGS_CHANGED", settings: next })));
+  await Promise.allSettled(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: 'CQ_GLOBAL_SETTINGS_CHANGED', settings: next })));
   return next;
 }
+
 
 function getNotificationPermissionLevel() {
   return new Promise(resolve => {
@@ -66,18 +71,30 @@ async function createSystemNotification(id, title, message) {
   });
 }
 
-async function drawAttentionForTab(tabId) {
+async function drawAttentionForTab(tabId, strong = false) {
   try {
     if (tabId != null) {
       const tab = await chrome.tabs.get(tabId);
       if (tab?.windowId != null) {
         const win = await chrome.windows.get(tab.windowId);
-        if (!win.focused) await chrome.windows.update(tab.windowId, { drawAttention: true });
+        if (!win.focused) {
+          await chrome.windows.update(tab.windowId, { drawAttention: true });
+          if (strong) {
+            await new Promise(r => setTimeout(r, 900));
+            await chrome.windows.update(tab.windowId, { drawAttention: true });
+          }
+        }
         return;
       }
     }
     const win = await chrome.windows.getLastFocused();
-    if (win?.id != null && !win.focused) await chrome.windows.update(win.id, { drawAttention: true });
+    if (win?.id != null && !win.focused) {
+      await chrome.windows.update(win.id, { drawAttention: true });
+      if (strong) {
+        await new Promise(r => setTimeout(r, 900));
+        await chrome.windows.update(win.id, { drawAttention: true });
+      }
+    }
   } catch {}
 }
 
@@ -102,7 +119,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "CQ_BEEP") {
-    playCompletionBeep();
+    getGlobalSettings().then(settings => playCompletionBeep(settings));
     sendResponse?.({ ok: true });
     return;
   }
@@ -121,7 +138,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const id = `cq-test-${Date.now()}`;
     createSystemNotification(id, "ChatGPT Queue", "Notifications are working.")
       .then(async result => {
-        if (result.ok) await drawAttentionForTab(null);
+        if (result.ok) {
+          const settings = await getGlobalSettings();
+          await drawAttentionForTab(null, settings.strongAttention);
+          if (settings.playSound) await playCompletionBeep(settings);
+        }
         sendResponse?.(result);
       });
     return true;
@@ -133,9 +154,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "CQ_TEST_SOUND") {
-    playCompletionBeep();
-    sendResponse?.({ ok: true });
-    return;
+    getGlobalSettings().then(async settings => {
+      await playCompletionBeep(settings);
+      sendResponse?.({ ok: true });
+    });
+    return true;
   }
 
   if (msg.type === "CQ_NOTIFY" && tabId != null) {
@@ -144,7 +167,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     createSystemNotification(id, msg.title || "ChatGPT Queue", msg.message || "Task completed.")
       .then(async result => {
         if (!result.ok) notificationToTab.delete(id);
-        else await drawAttentionForTab(tabId);
+        else {
+          const settings = await getGlobalSettings();
+          await drawAttentionForTab(tabId, settings.strongAttention);
+        }
         sendResponse?.(result);
       });
     return true;
@@ -242,10 +268,15 @@ async function ensureOffscreenAudioDocument() {
   }
 }
 
-async function playCompletionBeep() {
+async function playCompletionBeep(settings = {}) {
   try {
     await ensureOffscreenAudioDocument();
-    await chrome.runtime.sendMessage({ type: "CQ_OFFSCREEN_BEEP" });
+    await chrome.runtime.sendMessage({
+      type: "CQ_OFFSCREEN_BEEP",
+      preset: settings.soundPreset || 'chime',
+      volume: Number(settings.soundVolume ?? 70),
+      repeats: Math.max(1, Math.min(3, Number(settings.soundRepeats || 1)))
+    });
   } catch (err) {
     console.warn("ChatGPT Queue: completion beep failed", err);
   }
