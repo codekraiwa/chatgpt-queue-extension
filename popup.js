@@ -9,6 +9,11 @@ const backBtn = document.getElementById("back-btn");
 const settingNotify = document.getElementById("setting-notify");
 const settingInactive = document.getElementById("setting-inactive");
 const settingSound = document.getElementById("setting-sound");
+const settingSoundPreset = document.getElementById("setting-sound-preset");
+const settingVolume = document.getElementById("setting-volume");
+const volumeValue = document.getElementById("volume-value");
+const settingRepeats = document.getElementById("setting-repeats");
+const settingAttention = document.getElementById("setting-attention");
 const testNotificationBtn = document.getElementById("test-notification");
 const testSoundBtn = document.getElementById("test-sound");
 const settingsStatus = document.getElementById("settings-status");
@@ -22,6 +27,11 @@ async function loadGlobalSettings() {
   settingNotify.checked = gs.notifyWhenFinished !== false;
   settingInactive.checked = gs.notifyOnlyWhenInactive !== false;
   settingSound.checked = gs.playSound !== false;
+  settingSoundPreset.value = gs.soundPreset || "chime";
+  settingVolume.value = String(gs.soundVolume ?? 70);
+  volumeValue.textContent = `${settingVolume.value}%`;
+  settingRepeats.value = String(gs.soundRepeats || 1);
+  settingAttention.checked = gs.strongAttention !== false;
 
   if (notificationStatus?.level && notificationStatus.level !== "granted") {
     settingsStatus.textContent = `Chrome notification permission: ${notificationStatus.level}. Check macOS System Settings → Notifications → Google Chrome.`;
@@ -38,14 +48,20 @@ async function saveGlobalSettings() {
     settings: {
       notifyWhenFinished: settingNotify.checked,
       notifyOnlyWhenInactive: settingInactive.checked,
-      playSound: settingSound.checked
+      playSound: settingSound.checked,
+      soundPreset: settingSoundPreset.value,
+      soundVolume: Number(settingVolume.value),
+      soundRepeats: Number(settingRepeats.value),
+      strongAttention: settingAttention.checked
     }
   });
   settingsStatus.textContent = res?.ok ? "Saved" : "Could not save settings";
   setTimeout(() => { if (settingsStatus.textContent === "Saved") settingsStatus.textContent = ""; }, 1200);
 }
 
-[settingNotify, settingInactive, settingSound].forEach(el => el.addEventListener("change", saveGlobalSettings));
+[settingNotify, settingInactive, settingSound, settingSoundPreset, settingRepeats, settingAttention].forEach(el => el.addEventListener("change", saveGlobalSettings));
+settingVolume.addEventListener("input", () => { volumeValue.textContent = `${settingVolume.value}%`; });
+settingVolume.addEventListener("change", saveGlobalSettings);
 
 testNotificationBtn.onclick = async () => {
   settingsStatus.classList.remove("warning");
