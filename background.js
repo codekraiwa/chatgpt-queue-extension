@@ -5,10 +5,10 @@ const GLOBAL_SETTINGS_DEFAULTS = {
   notifyWhenFinished: true,
   notifyOnlyWhenInactive: true,
   playSound: true,
-  soundPreset: 'alarm',
-  soundVolume: 150,
-  soundRepeats: 2,
-  loudSoundVersion: 1,
+  soundPreset: 'alert',
+  soundVolume: 100,
+  soundRepeats: 1,
+  loudSoundVersion: 2,
   strongAttention: true
 };
 
@@ -19,11 +19,11 @@ async function getGlobalSettings() {
 
   // One-time loud-sound migration for existing installs that still carry
   // the older quiet defaults. Users can change these again afterwards.
-  if (current.loudSoundVersion !== 1) {
-    merged.soundPreset = 'alarm';
-    merged.soundVolume = 150;
-    merged.soundRepeats = 2;
-    merged.loudSoundVersion = 1;
+  if (current.loudSoundVersion !== 2) {
+    merged.soundPreset = 'alert';
+    merged.soundVolume = 100;
+    merged.soundRepeats = 1;
+    merged.loudSoundVersion = 2;
     await chrome.storage.sync.set({ cqGlobalSettings: merged });
   }
 
@@ -287,8 +287,8 @@ async function playCompletionBeep(settings = {}) {
     await ensureOffscreenAudioDocument();
     await chrome.runtime.sendMessage({
       type: "CQ_OFFSCREEN_BEEP",
-      preset: settings.soundPreset || 'alarm',
-      volume: Number(settings.soundVolume ?? 150),
+      preset: settings.soundPreset || 'alert',
+      volume: Number(settings.soundVolume ?? 100),
       repeats: Math.max(1, Math.min(5, Number(settings.soundRepeats || 2)))
     });
   } catch (err) {
