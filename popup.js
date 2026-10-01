@@ -27,8 +27,8 @@ async function loadGlobalSettings() {
   settingNotify.checked = gs.notifyWhenFinished !== false;
   settingInactive.checked = gs.notifyOnlyWhenInactive !== false;
   settingSound.checked = gs.playSound !== false;
-  settingSoundPreset.value = gs.soundPreset || "chime";
-  settingVolume.value = String(gs.soundVolume ?? 70);
+  settingSoundPreset.value = gs.soundPreset || "alarm";
+  settingVolume.value = String(gs.soundVolume ?? 150);
   volumeValue.textContent = `${settingVolume.value}%`;
   settingRepeats.value = String(gs.soundRepeats || 1);
   settingAttention.checked = gs.strongAttention !== false;
