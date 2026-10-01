@@ -71,6 +71,27 @@
     renderStatusFavicon();
   }
 
+  function applyGlobalSettings(globalSettings = {}) {
+    const keys = ["notifyWhenFinished", "notifyOnlyWhenInactive", "playSound"];
+    let changed = false;
+    for (const key of keys) {
+      if (typeof globalSettings[key] === "boolean" && settings[key] !== globalSettings[key]) {
+        settings[key] = globalSettings[key];
+        changed = true;
+      }
+    }
+    if (changed) saveSettings();
+  }
+
+  function loadGlobalSettings() {
+    try {
+      chrome.runtime.sendMessage({ type:"CQ_GET_GLOBAL_SETTINGS" }, res => {
+        if (chrome.runtime.lastError) return;
+        if (res?.settings) applyGlobalSettings(res.settings);
+      });
+    } catch {}
+  }
+
   function openDB() {
     if (dbPromise) return dbPromise;
     dbPromise = new Promise((resolve, reject) => {
@@ -684,7 +705,7 @@
       <div style="margin-top:13px;padding-top:12px;border-top:1px solid #333"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><strong>Notifications</strong><button id="cq-test" style="${buttonCss()}">Test</button></div><div id="cq-settings"></div></div>`;
     document.body.appendChild(panel);
     input=panel.querySelector("#cq-input"); listEl=panel.querySelector("#cq-list"); statusEl=panel.querySelector("#cq-status"); draftEl=panel.querySelector("#cq-draft"); filePicker=panel.querySelector("#cq-file");
-    panel.querySelector("#cq-settings").append(makeToggle("notifyWhenFinished","Notify when finished"),makeToggle("notifyOnlyWhenInactive","Only when tab isn't active"),makeToggle("markFinishedTab","Mark finished tab with ✅"),makeToggle("playSound","Play short sound"));
+    panel.querySelector("#cq-settings").append(makeToggle("notifyWhenFinished","Notify when finished"),makeToggle("notifyOnlyWhenInactive","Only when tab isn't active"),makeToggle("showStatusInTab","Show status in tab title"),makeToggle("showStatusFavicon","Show status favicon"),makeToggle("playSound","Play short sound"));
     panel.querySelector("#cq-close").onclick=hidePanel;
     panel.querySelector("#cq-add").onclick=addDraftToQueue;
     panel.querySelector("#cq-pause").onclick=()=>{state.paused=!state.paused;saveState();};
@@ -906,6 +927,11 @@
   function togglePanel(){createPanel();panel.style.display=(!panel.style.display||panel.style.display==="none")?"block":"none";render();}
 
   chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
+    if(msg.type==="CQ_GLOBAL_SETTINGS_CHANGED"){
+      applyGlobalSettings(msg.settings || {});
+      sendResponse?.({ok:true});
+      return;
+    }
     if(msg.type!=="CQ_COMMAND")return;
     if(msg.command==="togglePanel"){togglePanel();sendResponse({ok:true});}
     else if(msg.command==="runNext"){state.paused=false;generationState="idle";lastSentAt=0;saveState();maybeRunQueue();sendResponse({ok:true});}
@@ -913,5 +939,5 @@
     else if(msg.command==="resume"){state.paused=false;saveState();maybeRunQueue();sendResponse({ok:true});}
   });
 
-  openDB().then(()=>{ensureHeaderButton();attachComposerObserver();startTitleGuard();startFaviconGuard();renderBrowserTabTitle();renderStatusFavicon();reportStatus();});
+  openDB().then(()=>{loadGlobalSettings();ensureHeaderButton();attachComposerObserver();startTitleGuard();startFaviconGuard();renderBrowserTabTitle();renderStatusFavicon();reportStatus();});
 })();
