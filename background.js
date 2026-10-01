@@ -241,6 +241,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+async function clearNotificationsForTab(tabId, acknowledge = true) {
+  if (tabId == null) return;
+
+  const ids = [];
+  for (const [notificationId, mappedTabId] of notificationToTab.entries()) {
+    if (mappedTabId === tabId) ids.push(notificationId);
+  }
+
+  await Promise.allSettled(ids.map(async notificationId => {
+    notificationToTab.delete(notificationId);
+    await chrome.notifications.clear(notificationId);
+  }));
+
+  if (acknowledge) {
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: "CQ_COMMAND", command: "ackDone" });
+    } catch {}
+  }
+}
+
 chrome.notifications.onClicked.addListener(id => {
   const tabId = notificationToTab.get(id);
   if (tabId == null) return;
@@ -250,11 +270,27 @@ chrome.notifications.onClicked.addListener(id => {
       chrome.tabs.update(tabId, { active: true });
     });
   });
+  clearNotificationsForTab(tabId, true);
+});
+
+chrome.notifications.onClosed.addListener(id => {
   notificationToTab.delete(id);
-  chrome.notifications.clear(id);
+});
+
+chrome.tabs.onActivated.addListener(activeInfo => {
+  clearNotificationsForTab(activeInfo.tabId, true);
+});
+
+chrome.windows.onFocusChanged.addListener(windowId => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  chrome.tabs.query({ active: true, windowId }, tabs => {
+    const tab = tabs[0];
+    if (tab?.id != null) clearNotificationsForTab(tab.id, true);
+  });
 });
 
 chrome.tabs.onRemoved.addListener(tabId => {
+  clearNotificationsForTab(tabId, false);
   tabState.delete(tabId);
   updateBadge();
 });
