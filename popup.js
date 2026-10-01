@@ -52,7 +52,7 @@ testNotificationBtn.onclick = async () => {
   settingsStatus.textContent = "Testing notification…";
   const res = await chrome.runtime.sendMessage({ type: "CQ_TEST_NOTIFICATION" });
   if (res?.ok) {
-    settingsStatus.textContent = "Notification created by Chrome. If you still do not see it, enable Google Chrome in macOS System Settings → Notifications.";
+    settingsStatus.textContent = "High-priority notification created. It will stay visible until dismissed; Chrome will also request attention if it is in the background.";
   } else {
     settingsStatus.classList.add("warning");
     settingsStatus.textContent = `Notification failed${res?.permission ? ` (${res.permission})` : ""}: ${res?.error || "unknown error"}`;
