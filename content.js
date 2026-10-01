@@ -183,7 +183,7 @@
     if (generationState === "working") return "working";
     if (state.queue.length > 0) return "queued";
     if (state.doneUnread) return "done";
-    return "idle";
+    return "native";
   }
 
   function drawFavicon(stateName, frame = 0) {
@@ -288,6 +288,13 @@
 
     stopFaviconAnimation();
 
+    // Once a completed tab has been acknowledged and is idle,
+    // restore ChatGPT's normal favicon instead of showing an idle badge.
+    if (stateName === "native") {
+      link.href = originalFaviconHref || "/favicon.ico";
+      return;
+    }
+
     if (stateName === "working") {
       faviconFrame = 0;
       link.href = drawFavicon("working", faviconFrame);
@@ -315,7 +322,7 @@
     if (generationState === "working") return "🔄 Working";
     if (state.queue.length > 0) return `📥 Queue ${state.queue.length}`;
     if (state.doneUnread) return "✅";
-    return "😴";
+    return "";
   }
 
   function renderBrowserTabTitle() {
@@ -339,7 +346,8 @@
       return;
     }
 
-    const desired = `${desiredTabPrefix()} · ${nativeChatTitle}`;
+    const prefix = desiredTabPrefix();
+    const desired = prefix ? `${prefix} · ${nativeChatTitle}` : nativeChatTitle;
 
     if (document.title !== desired) {
       applyingTitle = true;
@@ -421,7 +429,7 @@
   }
 
   // When the user actually comes back to a completed tab,
-  // the check becomes sleep/idle while the completion time remains stored.
+  // remove extension status decoration and restore the normal ChatGPT tab appearance.
   window.addEventListener("focus", () => {
     if (generationState === "idle" && !state.queue.length) {
       markDoneSeen();
