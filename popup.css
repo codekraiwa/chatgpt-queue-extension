@@ -409,3 +409,5 @@ h1 {
 .setting-row input[type="checkbox"] { width:18px; height:18px; flex:0 0 auto; accent-color:#10a37f; }
 .settings-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
 .wide-button.secondary { background:#242424; border:1px solid #444; }
+
+.settings-note.warning { color:#ff9d76; }
