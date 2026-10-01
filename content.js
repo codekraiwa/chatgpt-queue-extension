@@ -35,7 +35,7 @@
   let lastKnownTitle = document.title;
 
   function defaults() { return { queue: [], paused: false, lastFinishedAt: 0, doneUnread: false }; }
-  function defaultSettings() { return { notifyWhenFinished:true, notifyOnlyWhenInactive:true, showStatusInTab:true, showStatusFavicon:true, playSound:true, soundEngineVersion:2 }; }
+  function defaultSettings() { return { notifyWhenFinished:true, notifyOnlyWhenInactive:false, showStatusInTab:true, showStatusFavicon:true, playSound:true, soundEngineVersion:2 }; }
 
   function loadState() {
     try { return { ...defaults(), ...(JSON.parse(localStorage.getItem(STATE_KEY) || "{}")) }; }
