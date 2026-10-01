@@ -20,6 +20,48 @@ async function setGlobalSettings(patch) {
   return next;
 }
 
+function getNotificationPermissionLevel() {
+  return new Promise(resolve => {
+    try {
+      chrome.notifications.getPermissionLevel(level => {
+        if (chrome.runtime.lastError) {
+          resolve({ level: "unknown", error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve({ level: level || "unknown", error: "" });
+      });
+    } catch (err) {
+      resolve({ level: "unknown", error: String(err?.message || err) });
+    }
+  });
+}
+
+async function createSystemNotification(id, title, message) {
+  const permission = await getNotificationPermissionLevel();
+  if (permission.level !== "granted") {
+    return { ok: false, permission: permission.level, error: permission.error || `Notification permission is ${permission.level}.` };
+  }
+
+  return new Promise(resolve => {
+    try {
+      chrome.notifications.create(id, {
+        type: "basic",
+        iconUrl: chrome.runtime.getURL("icon128.png"),
+        title: title || "ChatGPT Queue",
+        message: message || "Task completed."
+      }, notificationId => {
+        if (chrome.runtime.lastError) {
+          resolve({ ok: false, permission: permission.level, error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve({ ok: !!notificationId, notificationId, permission: permission.level, error: notificationId ? "" : "Chrome did not create a notification." });
+      });
+    } catch (err) {
+      resolve({ ok: false, permission: permission.level, error: String(err?.message || err) });
+    }
+  });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id ?? msg.tabId;
 
@@ -58,14 +100,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "CQ_TEST_NOTIFICATION") {
     const id = `cq-test-${Date.now()}`;
-    chrome.notifications.create(id, {
-      type: "basic",
-      iconUrl: "icon128.png",
-      title: "ChatGPT Queue",
-      message: "Notifications are working."
-    });
-    sendResponse?.({ ok: true });
-    return;
+    createSystemNotification(id, "ChatGPT Queue", "Notifications are working.")
+      .then(result => sendResponse?.(result));
+    return true;
+  }
+
+  if (msg.type === "CQ_GET_NOTIFICATION_STATUS") {
+    getNotificationPermissionLevel().then(result => sendResponse?.({ ok: true, ...result }));
+    return true;
   }
 
   if (msg.type === "CQ_TEST_SOUND") {
@@ -77,14 +119,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "CQ_NOTIFY" && tabId != null) {
     const id = `cq-${tabId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     notificationToTab.set(id, tabId);
-    chrome.notifications.create(id, {
-      type: "basic",
-      iconUrl: "icon128.png",
-      title: msg.title || "ChatGPT Queue",
-      message: msg.message || "Task completed."
-    });
-    sendResponse?.({ ok: true });
-    return;
+    createSystemNotification(id, msg.title || "ChatGPT Queue", msg.message || "Task completed.")
+      .then(result => {
+        if (!result.ok) notificationToTab.delete(id);
+        sendResponse?.(result);
+      });
+    return true;
   }
 
   if (msg.type === "CQ_GET_TABS") {
