@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ChatGPT Queue</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-copy">
+      <h1 id="page-title">ChatGPT Queue</h1>
+      <div id="summary" class="summary-row"></div>
+    </div>
+    <div class="top-actions">
+      <button id="settings-btn" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
+      <button id="refresh" class="icon-button" title="Refresh" aria-label="Refresh">↻</button>
+    </div>
+  </header>
+
+  <main id="tabs-view">
+    <div id="tabs" class="tab-list"></div>
+  </main>
+
+  <main id="settings-view" class="settings-view hidden">
+    <div class="settings-card">
+      <div class="settings-title">Browser tab status</div>
+      <div class="settings-copy">
+        Browser tabs now show a live status icon without opening the extension:
+        <div class="state-demo">
+          <span>🟠 Working</span>
+          <span>✅ Done</span>
+          <span>Ⓩ Idle</span>
+          <span>🔵 Queue</span>
+          <span>⏸ Paused</span>
+        </div>
+      </div>
+      <p class="settings-note">
+        Per-chat notification switches remain inside each ChatGPT Queue panel.
+      </p>
+      <button id="back-btn" class="wide-button">Back to tabs</button>
+    </div>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>
