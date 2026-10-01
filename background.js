@@ -3,12 +3,13 @@ const notificationToTab = new Map();
 
 const GLOBAL_SETTINGS_DEFAULTS = {
   notifyWhenFinished: true,
-  notifyOnlyWhenInactive: true,
+  notifyOnlyWhenInactive: false,
   playSound: true,
   soundPreset: 'alert',
   soundVolume: 100,
   soundRepeats: 1,
   loudSoundVersion: 2,
+  activeNotifyVersion: 1,
   strongAttention: true
 };
 
@@ -24,6 +25,15 @@ async function getGlobalSettings() {
     merged.soundVolume = 100;
     merged.soundRepeats = 1;
     merged.loudSoundVersion = 2;
+  }
+
+  // v1.8.3: notifications are shown even when the ChatGPT tab is active by default.
+  if (current.activeNotifyVersion !== 1) {
+    merged.notifyOnlyWhenInactive = false;
+    merged.activeNotifyVersion = 1;
+  }
+
+  if (JSON.stringify(merged) !== JSON.stringify(current)) {
     await chrome.storage.sync.set({ cqGlobalSettings: merged });
   }
 
