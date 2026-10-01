@@ -26,7 +26,11 @@
       <div class="settings-title">Notifications & sound</div>
       <label class="setting-row"><span><strong>Notify when finished</strong><small>Show a Chrome notification when a response completes.</small></span><input id="setting-notify" type="checkbox"></label>
       <label class="setting-row"><span><strong>Only when tab isn't active</strong><small>Suppress completion notifications while you are already viewing that tab.</small></span><input id="setting-inactive" type="checkbox"></label>
-      <label class="setting-row"><span><strong>Completion sound</strong><small>Play a two-tone beep even when ChatGPT is in a background tab.</small></span><input id="setting-sound" type="checkbox"></label>
+      <label class="setting-row"><span><strong>Completion sound</strong><small>Play a sound even when ChatGPT is in a background tab.</small></span><input id="setting-sound" type="checkbox"></label>
+      <div class="setting-control"><label for="setting-sound-preset">Sound</label><select id="setting-sound-preset"><option value="soft">Soft</option><option value="chime">Chime</option><option value="bell">Bell</option><option value="alert">Alert</option></select></div>
+      <div class="setting-control"><label for="setting-volume">Volume <span id="volume-value">70%</span></label><input id="setting-volume" type="range" min="10" max="100" step="5" value="70"></div>
+      <div class="setting-control"><label for="setting-repeats">Repeat</label><select id="setting-repeats"><option value="1">Once</option><option value="2">Twice</option><option value="3">3 times</option></select></div>
+      <label class="setting-row"><span><strong>Strong attention</strong><small>Request Chrome/Dock attention twice when a background response finishes.</small></span><input id="setting-attention" type="checkbox"></label>
       <div class="settings-actions">
         <button id="test-notification" class="wide-button secondary">Test notification</button>
         <button id="test-sound" class="wide-button secondary">Test sound</button>
