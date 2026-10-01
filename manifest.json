@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Queue",
-  "version": "1.8.2",
-  "description": "ChatGPT prompt queue with short high-impact completion sounds, adjustable up to 400% gain.",
+  "version": "1.8.3",
+  "description": "ChatGPT prompt queue with completion notifications that also work while the ChatGPT tab is active.",
   "permissions": [
     "storage",
     "notifications",
