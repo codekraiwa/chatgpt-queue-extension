@@ -34,7 +34,7 @@
   let composerObserver = null;
   let lastKnownTitle = document.title;
 
-  function defaults() { return { queue: [], paused: false, lastFinishedAt: 0, doneUnread: false }; }
+  function defaults() { return { queue: [], paused: false, lastFinishedAt: 0, doneUnread: false, activeQueueItemId: null }; }
   function defaultSettings() { return { notifyWhenFinished:true, notifyOnlyWhenInactive:false, showStatusInTab:true, showStatusFavicon:true, playSound:true, soundEngineVersion:2 }; }
 
   function loadState() {
@@ -670,39 +670,89 @@
 
   async function maybeRunQueue() {
     if (state.paused || sending || !state.queue.length) return;
+    if (state.activeQueueItemId) return;
     if (generationState === "working" || isGenerating()) return;
     if (Date.now() - lastSentAt < CFG.minSendGapMs) return;
-    if (!batchActive) { batchActive = true; batchCompleted = 0; }
-    const item = state.queue[0], ok = await sendItem(item); if (!ok) return;
-    state.queue.shift(); batchCompleted++; if (!state.queue.length) awaitingFinalResponse = true; saveState();
-    for (const img of item.images || []) { try { await dbDelete(img.id); } catch {} }
-  }
 
-  function onResponseFinished() {
-    if (batchActive && awaitingFinalResponse && !state.queue.length) {
-      awaitingFinalResponse = false;
-      markDone();
-      batchActive = false;
-      const completedCount = batchCompleted;
-      batchCompleted = 0;
-      reportStatus();
-      notify(
-        `Queue complete — ${chatLabel()}`,
-        `All ${completedCount} queued task${completedCount === 1 ? "" : "s"} completed · 0 remaining.`
-      );
+    if (!batchActive) { batchActive = true; batchCompleted = 0; }
+
+    // FIFO lock: always run the oldest pending item and keep its ID locked
+    // until the corresponding assistant response is confirmed complete.
+    const item = state.queue[0];
+    state.activeQueueItemId = item.id;
+    saveState();
+
+    const ok = await sendItem(item);
+    if (!ok) {
+      state.activeQueueItemId = null;
+      saveState();
       return;
     }
 
+    // Do NOT shift here. The active item stays at queue[0] while ChatGPT
+    // is answering, preventing another queue item from jumping ahead.
+    awaitingFinalResponse = state.queue.length === 1;
+    saveState();
+  }
+
+  async function completeActiveQueueItem() {
+    const activeId = state.activeQueueItemId;
+    if (!activeId) return null;
+
+    const index = state.queue.findIndex(item => item.id === activeId);
+    if (index < 0) {
+      state.activeQueueItemId = null;
+      saveState();
+      return null;
+    }
+
+    const [item] = state.queue.splice(index, 1);
+    state.activeQueueItemId = null;
+    batchCompleted++;
+    awaitingFinalResponse = false;
+    saveState();
+
+    for (const img of item.images || []) {
+      try { await dbDelete(img.id); } catch {}
+    }
+
+    return item;
+  }
+
+  async function onResponseFinished() {
+    const completedItem = await completeActiveQueueItem();
+
+    if (completedItem) {
+      if (!state.queue.length) {
+        markDone();
+        batchActive = false;
+        const completedCount = batchCompleted;
+        batchCompleted = 0;
+        reportStatus();
+        notify(
+          `Queue complete — ${chatLabel()}`,
+          `All ${completedCount} queued task${completedCount === 1 ? "" : "s"} completed · 0 remaining.`
+        );
+        return;
+      }
+
+      const remaining = state.queue.length;
+      notify(
+        `Queue progress — ${chatLabel()}`,
+        `${batchCompleted} completed · ${remaining} queue${remaining === 1 ? "" : "s"} remaining · continuing.`
+      );
+      maybeRunQueue();
+      return;
+    }
+
+    // A normal/manual ChatGPT response finished while pending queue items exist.
+    // Nothing is dequeued because no queue item was locked to this response.
     if (state.queue.length) {
       const remaining = state.queue.length;
-      const completed = batchActive ? batchCompleted : 0;
-      const title = batchActive
-        ? `Queue progress — ${chatLabel()}`
-        : `Response finished — ${chatLabel()}`;
-      const message = batchActive
-        ? `${completed} completed · ${remaining} queue${remaining === 1 ? "" : "s"} remaining · continuing.`
-        : `${remaining} queue${remaining === 1 ? "" : "s"} remaining · queue starting.`;
-      notify(title, message);
+      notify(
+        `Response finished — ${chatLabel()}`,
+        `${remaining} queue${remaining === 1 ? "" : "s"} remaining · queue starting.`
+      );
       maybeRunQueue();
       return;
     }
@@ -854,14 +904,14 @@
   }
   async function clearQueue(){
     for(const item of state.queue)for(const img of item.images||[])try{await dbDelete(img.id);}catch{}
-    state.queue=[];batchActive=false;batchCompleted=0;awaitingFinalResponse=false;saveState();
+    state.queue=[];state.activeQueueItemId=null;batchActive=false;batchCompleted=0;awaitingFinalResponse=false;saveState();
   }
-  async function removeQueueItem(index){const item=state.queue[index];if(!item)return;for(const img of item.images||[])try{await dbDelete(img.id);}catch{}state.queue.splice(index,1);saveState();}
-  function moveQueueItem(index,dir){const target=index+dir;if(target<0||target>=state.queue.length)return;[state.queue[index],state.queue[target]]=[state.queue[target],state.queue[index]];saveState();}
+  async function removeQueueItem(index){const item=state.queue[index];if(!item)return;if(item.id===state.activeQueueItemId)return;for(const img of item.images||[])try{await dbDelete(img.id);}catch{}state.queue.splice(index,1);saveState();}
+  function moveQueueItem(index,dir){const target=index+dir;if(target<0||target>=state.queue.length)return;const current=state.queue[index],other=state.queue[target];if(current?.id===state.activeQueueItemId||other?.id===state.activeQueueItemId)return;[state.queue[index],state.queue[target]]=[state.queue[target],state.queue[index]];saveState();}
 
   function render(){
     if(!panel)return;statusEl.textContent=`${state.paused?"Paused":"Active"} · ${currentStatus()} · ${state.queue.length} queued`;panel.querySelector("#cq-pause").textContent=state.paused?"Resume":"Pause";listEl.innerHTML="";
-    state.queue.forEach((item,i)=>{const row=document.createElement("div");Object.assign(row.style,{display:"flex",gap:"8px",padding:"9px 0",borderTop:"1px solid #303030"});const body=document.createElement("div");body.style.flex="1";body.style.minWidth="0";const title=document.createElement("div");title.style.whiteSpace="nowrap";title.style.overflow="hidden";title.style.textOverflow="ellipsis";title.textContent=`${i+1}. ${item.text||"(images only)"}`;body.appendChild(title);if(item.images?.length){const meta=document.createElement("div");meta.style.cssText="font-size:11px;color:#999;margin-top:3px";meta.textContent=`Image × ${item.images.length}`;body.appendChild(meta);}const controls=document.createElement("div");controls.style.display="flex";controls.style.gap="3px";controls.innerHTML=`<button style="${buttonCss()}">↑</button><button style="${buttonCss()}">↓</button><button style="${buttonCss()}">×</button>`;const bs=controls.querySelectorAll("button");bs[0].onclick=()=>moveQueueItem(i,-1);bs[1].onclick=()=>moveQueueItem(i,1);bs[2].onclick=()=>removeQueueItem(i);row.append(body,controls);listEl.appendChild(row);});
+    state.queue.forEach((item,i)=>{const row=document.createElement("div");Object.assign(row.style,{display:"flex",gap:"8px",padding:"9px 0",borderTop:"1px solid #303030"});const body=document.createElement("div");body.style.flex="1";body.style.minWidth="0";const title=document.createElement("div");title.style.whiteSpace="nowrap";title.style.overflow="hidden";title.style.textOverflow="ellipsis";title.textContent=`${i+1}. ${item.id===state.activeQueueItemId?"▶ Running · ":""}${item.text||"(images only)"}`;body.appendChild(title);if(item.images?.length){const meta=document.createElement("div");meta.style.cssText="font-size:11px;color:#999;margin-top:3px";meta.textContent=`Image × ${item.images.length}`;body.appendChild(meta);}const controls=document.createElement("div");controls.style.display="flex";controls.style.gap="3px";controls.innerHTML=`<button style="${buttonCss()}">↑</button><button style="${buttonCss()}">↓</button><button style="${buttonCss()}">×</button>`;const bs=controls.querySelectorAll("button");const locked=item.id===state.activeQueueItemId;bs.forEach(b=>{b.disabled=locked;b.style.opacity=locked?".35":"1";});bs[0].onclick=()=>moveQueueItem(i,-1);bs[1].onclick=()=>moveQueueItem(i,1);bs[2].onclick=()=>removeQueueItem(i);row.append(body,controls);listEl.appendChild(row);});
     renderSettings();updateHeaderButton();
   }
 
@@ -947,54 +997,3 @@
     headerButton.type="button";
     headerButton.setAttribute("aria-label","ChatGPT Queue");
     headerButton.title="ChatGPT Queue";
-
-    Object.assign(headerButton.style,{
-      display:"inline-flex",
-      alignItems:"center",
-      justifyContent:"center",
-      height:"32px",
-      padding:"0 9px",
-      border:"none",
-      borderRadius:"8px",
-      background:"transparent",
-      color:"inherit",
-      font:"inherit",
-      fontWeight:"500",
-      cursor:"pointer",
-      whiteSpace:"nowrap",
-      flex:"0 0 auto"
-    });
-
-    headerButton.onclick=e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      togglePanel();
-    };
-
-    headerButton.onmouseenter=()=>headerButton.style.background="rgba(128,128,128,.12)";
-    headerButton.onmouseleave=()=>headerButton.style.background="transparent";
-
-    const share=container.querySelector(
-      'button[aria-label="Share"],button[aria-label^="Share"],button[data-testid*="share"]'
-    );
-
-    if(share&&share.parentElement===container){
-      container.insertBefore(headerButton,share);
-    }else if(anchor.parentElement===container){
-      container.insertBefore(headerButton,anchor);
-    }else{
-      container.appendChild(headerButton);
-    }
-
-    updateHeaderButton();
-    reportStatus();
-    return true;
-  }
-
-  function updateHeaderButton(){
-    if(!headerButton||!headerButton.isConnected)return;
-    headerButton.textContent=state.queue.length?`Queue ${state.queue.length}`:"Queue";
-  }
-
-  setInterval(()=>{
-    if(!headerButton||!headerButton.isConnected)ensureHeaderButton();
