@@ -1,4 +1,4 @@
-# ChatGPT Queue Extension — Git workflow
+# Prompt & Leave, ChatGPT Queue Extension — Git workflow
 
 ## Install once
 
@@ -26,7 +26,7 @@ On another machine:
 git pull
 ```
 
-Then go to `chrome://extensions` and click **Reload** on ChatGPT Queue.
+Then go to `chrome://extensions` and click **Reload** on Prompt & Leave, ChatGPT Queue.
 
 You do not need to remove/reinstall the extension as long as Chrome still points to the same folder.
 
@@ -47,7 +47,7 @@ If you want truly automatic updates without pressing Reload, the normal route is
 
 ## One-click local updater (macOS)
 
-The repository includes `Update ChatGPT Queue.command`.
+The repository includes `Update Prompt & Leave.command`.
 
 After the first setup, double-click that file to:
 
@@ -61,7 +61,7 @@ The updater refuses to overwrite tracked files with uncommitted local changes.
 If macOS blocks the file the first time, run:
 
 ```bash
-chmod +x 'Update ChatGPT Queue.command'
+chmod +x 'Update Prompt & Leave.command'
 ```
 
 Then double-click it in Finder.
