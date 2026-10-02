@@ -98,7 +98,7 @@ backBtn.onclick = () => {
   summaryEl.classList.remove("hidden");
   refreshBtn.classList.remove("hidden");
   settingsBtn.classList.remove("hidden");
-  pageTitle.textContent = "ChatGPT Queue";
+  pageTitle.textContent = "Prompt & Leave, ChatGPT Queue";
 };
 
 function esc(s = "") {
