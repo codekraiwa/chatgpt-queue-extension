@@ -340,9 +340,11 @@
   }
 
   function desiredTabPrefix() {
-    if (state.paused) return "⏸ Paused";
-    if (generationState === "working") return "🔄 Working";
-    if (state.queue.length > 0) return `📥 Queue ${state.queue.length}`;
+    // Keep ChatGPT's native chat title readable at all times.
+    // Status is conveyed by a compact leading symbol only.
+    if (state.paused) return "⏸";
+    if (generationState === "working") return "🔄";
+    if (state.queue.length > 0) return "📥";
     if (state.doneUnread) return "✅";
     return "";
   }
@@ -996,5 +998,3 @@
 
   setInterval(()=>{
     if(!headerButton||!headerButton.isConnected)ensureHeaderButton();
-    else updateHeaderButton();
-  },CFG.headerCheckMs);
