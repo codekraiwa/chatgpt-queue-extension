@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Queue",
-  "version": "1.8.4",
-  "description": "ChatGPT prompt queue with completion notifications that clear automatically when you open the related tab.",
+  "version": "1.8.5",
+  "description": "ChatGPT prompt queue with safe background auto-send that never steals the Queue editor focus.",
   "permissions": [
     "storage",
     "notifications",
