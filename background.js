@@ -83,7 +83,7 @@ async function createSystemNotification(id, title, message) {
       chrome.notifications.create(id, {
         type: "basic",
         iconUrl: chrome.runtime.getURL("icon128.png"),
-        title: title || "ChatGPT Queue",
+        title: title || "Prompt & Leave, ChatGPT Queue",
         message: message || "Task completed.",
         expandedMessage: message || "Task completed.",
         priority: 2,
@@ -167,7 +167,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "CQ_TEST_NOTIFICATION") {
     const id = `cq-test-${Date.now()}`;
-    createSystemNotification(id, "ChatGPT Queue", "Notifications are working.")
+    createSystemNotification(id, "Prompt & Leave, ChatGPT Queue", "Notifications are working.")
       .then(async result => {
         if (result.ok) {
           const settings = await getGlobalSettings();
@@ -195,7 +195,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "CQ_NOTIFY" && tabId != null) {
     const id = `cq-${tabId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     notificationToTab.set(id, tabId);
-    createSystemNotification(id, msg.title || "ChatGPT Queue", msg.message || "Task completed.")
+    createSystemNotification(id, msg.title || "Prompt & Leave, ChatGPT Queue", msg.message || "Task completed.")
       .then(async result => {
         if (!result.ok) notificationToTab.delete(id);
         else {
@@ -350,12 +350,12 @@ async function ensureOffscreenAudioDocument() {
     await chrome.offscreen.createDocument({
       url: "offscreen.html",
       reasons: ["AUDIO_PLAYBACK"],
-      justification: "Play the ChatGPT Queue completion beep."
+      justification: "Play the Prompt & Leave, ChatGPT Queue completion beep."
     });
   } catch (err) {
     // createDocument throws if another worker created it in the meantime.
     if (!String(err?.message || err).toLowerCase().includes("single offscreen")) {
-      console.warn("ChatGPT Queue: offscreen audio setup failed", err);
+      console.warn("Prompt & Leave, ChatGPT Queue: offscreen audio setup failed", err);
     }
   }
 }
@@ -370,6 +370,6 @@ async function playCompletionBeep(settings = {}) {
       repeats: Math.max(1, Math.min(5, Number(settings.soundRepeats || 2)))
     });
   } catch (err) {
-    console.warn("ChatGPT Queue: completion beep failed", err);
+    console.warn("Prompt & Leave, ChatGPT Queue: completion beep failed", err);
   }
 }
