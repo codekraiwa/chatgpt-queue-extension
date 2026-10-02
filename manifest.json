@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Queue",
-  "version": "1.8.8",
-  "description": "ChatGPT prompt queue with progress notifications showing remaining queue items and final completion status.",
+  "version": "1.8.9",
+  "description": "ChatGPT prompt queue with native chat titles preserved and compact status symbols.",
   "permissions": [
     "storage",
     "notifications",
