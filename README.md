@@ -1,8 +1,8 @@
-# ChatGPT Queue
+# Prompt & Leave, ChatGPT Queue
 
 **Queue prompts. Leave the tab. Come back when it is done.**
 
-ChatGPT Queue is a lightweight Chrome extension that adds a reliable prompt queue to ChatGPT. It runs queued prompts in strict FIFO order, tracks multiple ChatGPT tabs, shows live status directly on each tab, and alerts you when responses or entire queues finish.
+Prompt & Leave, ChatGPT Queue is a lightweight Chrome extension that adds a reliable prompt queue to ChatGPT. It runs queued prompts in strict FIFO order, tracks multiple ChatGPT tabs, shows live status directly on each tab, and alerts you when responses or entire queues finish.
 
 It is designed for people who keep several ChatGPT conversations running at once and do not want to babysit every response.
 
@@ -44,7 +44,7 @@ B
 C
 ```
 
-ChatGPT Queue runs:
+Prompt & Leave, ChatGPT Queue runs:
 
 ```text
 A → wait for A to fully finish → B → wait for B → C
@@ -101,7 +101,7 @@ Sound options are available from the extension settings, including sound style, 
 
 ## Privacy
 
-ChatGPT Queue does not use a separate application server and does not require an OpenAI API key.
+Prompt & Leave, ChatGPT Queue does not use a separate application server and does not require an OpenAI API key.
 
 Queue state and settings are stored in the browser. Image attachments are stored locally in browser storage while waiting in the queue and are then passed to the ChatGPT page when their item runs.
 
@@ -120,7 +120,7 @@ The extension requests only the browser permissions needed for queue state, noti
 
 ## Limitations
 
-ChatGPT Queue works by integrating with the ChatGPT website, so major changes to ChatGPT's page structure can occasionally require an extension update.
+Prompt & Leave, ChatGPT Queue works by integrating with the ChatGPT website, so major changes to ChatGPT's page structure can occasionally require an extension update.
 
 Chrome may also suspend or discard background tabs under heavy memory pressure. The extension uses DOM observation plus fallback checks to improve reliability, but it cannot fully override Chrome's tab lifecycle behavior.
 
