@@ -1,6 +1,13 @@
 const tabState = new Map();
 const notificationToTab = new Map();
 
+function notificationTabId(notificationId) {
+  const mapped = notificationToTab.get(notificationId);
+  if (Number.isInteger(mapped)) return mapped;
+  const match = /^cq-(\d+)-/.exec(String(notificationId || ""));
+  return match ? Number(match[1]) : null;
+}
+
 const GLOBAL_SETTINGS_DEFAULTS = {
   notifyWhenFinished: true,
   notifyOnlyWhenInactive: false,
@@ -241,15 +248,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+async function getVisibleNotificationIds() {
+  return new Promise(resolve => {
+    try {
+      chrome.notifications.getAll(items => {
+        if (chrome.runtime.lastError) return resolve([]);
+        resolve(Object.keys(items || {}));
+      });
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
 async function clearNotificationsForTab(tabId, acknowledge = true) {
   if (tabId == null) return;
 
-  const ids = [];
+  // The MV3 service worker can be suspended, which clears in-memory Maps.
+  // Recover ownership from the notification id itself so multiple queued
+  // completions still clear and route correctly after a worker restart.
+  const visibleIds = await getVisibleNotificationIds();
+  const ids = new Set(visibleIds.filter(id => notificationTabId(id) === tabId));
+
   for (const [notificationId, mappedTabId] of notificationToTab.entries()) {
-    if (mappedTabId === tabId) ids.push(notificationId);
+    if (mappedTabId === tabId) ids.add(notificationId);
   }
 
-  await Promise.allSettled(ids.map(async notificationId => {
+  await Promise.allSettled([...ids].map(async notificationId => {
     notificationToTab.delete(notificationId);
     await chrome.notifications.clear(notificationId);
   }));
@@ -262,15 +287,22 @@ async function clearNotificationsForTab(tabId, acknowledge = true) {
 }
 
 chrome.notifications.onClicked.addListener(id => {
-  const tabId = notificationToTab.get(id);
+  const tabId = notificationTabId(id);
   if (tabId == null) return;
+
   chrome.tabs.get(tabId, tab => {
-    if (chrome.runtime.lastError || !tab) return;
+    if (chrome.runtime.lastError || !tab) {
+      notificationToTab.delete(id);
+      chrome.notifications.clear(id);
+      return;
+    }
+
     chrome.windows.update(tab.windowId, { focused: true }, () => {
-      chrome.tabs.update(tabId, { active: true });
+      chrome.tabs.update(tabId, { active: true }, () => {
+        clearNotificationsForTab(tabId, true);
+      });
     });
   });
-  clearNotificationsForTab(tabId, true);
 });
 
 chrome.notifications.onClosed.addListener(id => {
