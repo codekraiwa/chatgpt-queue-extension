@@ -1,5 +1,5 @@
 # Prompt & Leave, ChatGPT Queue
-
+# Keep ChatGPT moving.
 **Queue prompts. Leave the tab. Come back when it is done.**
 
 Prompt & Leave, ChatGPT Queue is a lightweight Chrome extension that adds a reliable prompt queue to ChatGPT. It runs queued prompts in strict FIFO order, tracks multiple ChatGPT tabs, shows live status directly on each tab, and alerts you when responses or entire queues finish.
