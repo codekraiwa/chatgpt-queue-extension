@@ -19,6 +19,7 @@
   const STORE = "images";
 
   let state = loadState();
+  if ("paused" in state) { delete state.paused; localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
   let settings = loadSettings();
   let dbPromise = null;
   let panel = null, input = null, listEl = null, statusEl = null, draftEl = null, filePicker = null, headerButton = null;
@@ -34,7 +35,7 @@
   let composerObserver = null;
   let lastKnownTitle = document.title;
 
-  function defaults() { return { queue: [], paused: false, lastFinishedAt: 0, doneUnread: false, activeQueueItemId: null }; }
+  function defaults() { return { queue: [], queueBlocked: false, lastFinishedAt: 0, doneUnread: false, activeQueueItemId: null }; }
   function defaultSettings() { return { notifyWhenFinished:true, notifyOnlyWhenInactive:false, showStatusInTab:true, showStatusFavicon:true, playSound:true, soundEngineVersion:2 }; }
 
   function loadState() {
@@ -201,7 +202,6 @@
   }
 
   function faviconState() {
-    if (state.paused) return "paused";
     if (generationState === "working") return "working";
     if (state.queue.length > 0) return "queued";
     if (state.doneUnread) return "done";
@@ -342,7 +342,6 @@
   function desiredTabPrefix() {
     // Keep ChatGPT's native chat title readable at all times.
     // Status is conveyed by a compact leading symbol only.
-    if (state.paused) return "⏸";
     if (generationState === "working") return "🔄";
     if (state.queue.length > 0) return "📥";
     if (state.doneUnread) return "✅";
@@ -552,7 +551,6 @@
     return `${text.length}:${childCount}:${tail}`;
   }
   function currentStatus() {
-    if (state.paused) return "paused";
     if (sending) return "sending";
     if (generationState === "working") return "working";
     if (state.queue.length) return "queued";
@@ -561,7 +559,7 @@
   }
   function reportStatus() {
     try {
-      chrome.runtime.sendMessage({ type:"CQ_STATUS", title:chatLabel(), queueCount:state.queue.length, status:currentStatus(), paused:state.paused, lastFinishedAt:state.lastFinishedAt||0, doneUnread:!!state.doneUnread });
+      chrome.runtime.sendMessage({ type:"CQ_STATUS", title:chatLabel(), queueCount:state.queue.length, status:currentStatus(), paused:false, lastFinishedAt:state.lastFinishedAt||0, doneUnread:!!state.doneUnread });
     } catch {}
   }
   function notify(title, message, force=false) {
@@ -661,7 +659,7 @@
       lastSentAt = Date.now();
       return true;
     } catch (err) {
-      state.paused = true; saveState(); notify(`Queue paused — ${chatLabel()}`, err.message || "Queue send failed", true); return false;
+      state.queueBlocked = true; saveState(); notify(`Queue stopped — ${chatLabel()}`, err.message || "Queue send failed", true); return false;
     } finally {
       restoreQueueEditorFocus(focusSnapshot);
       sending = false; render(); reportStatus();
@@ -669,7 +667,7 @@
   }
 
   async function maybeRunQueue() {
-    if (state.paused || sending || !state.queue.length) return;
+    if (state.queueBlocked || sending || !state.queue.length) return;
     if (state.activeQueueItemId) return;
     if (generationState === "working" || isGenerating()) return;
     if (Date.now() - lastSentAt < CFG.minSendGapMs) return;
@@ -860,7 +858,7 @@
       <div id="cq-drop" style="margin-top:9px;border:1px dashed #555;border-radius:9px;padding:12px;text-align:center;cursor:pointer;color:#aaa;background:#202020">Add / paste / drop images</div>
       <input id="cq-file" type="file" accept="image/*" multiple style="display:none!important">
       <div id="cq-draft" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:8px"></div>
-      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button id="cq-add" style="${buttonCss(true)}">Add</button><button id="cq-pause" style="${buttonCss()}">Pause</button><button id="cq-clear" style="${buttonCss()}">Clear</button><button id="cq-run" style="${buttonCss()}">Run Next</button></div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button id="cq-add" style="${buttonCss(true)}">Add</button><button id="cq-clear" style="${buttonCss()}">Clear</button><button id="cq-run" style="${buttonCss()}">Run Next</button></div>
       <div id="cq-status" style="margin-top:11px;color:#aaa;font-size:12px"></div>
       <div id="cq-list" style="margin-top:9px;max-height:220px;overflow:auto"></div>
       <div style="margin-top:13px;padding-top:12px;border-top:1px solid #333"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><strong>Notifications</strong><button id="cq-test" style="${buttonCss()}">Test</button></div><div id="cq-settings"></div></div>`;
@@ -869,9 +867,8 @@
     panel.querySelector("#cq-settings").append(makeToggle("notifyWhenFinished","Notify when finished"),makeToggle("notifyOnlyWhenInactive","Only when tab isn't active"),makeToggle("showStatusInTab","Show status in tab title"),makeToggle("showStatusFavicon","Show status favicon"),makeToggle("playSound","Play short sound"));
     panel.querySelector("#cq-close").onclick=hidePanel;
     panel.querySelector("#cq-add").onclick=addDraftToQueue;
-    panel.querySelector("#cq-pause").onclick=()=>{state.paused=!state.paused;saveState();};
     panel.querySelector("#cq-clear").onclick=clearQueue;
-    panel.querySelector("#cq-run").onclick=()=>{state.paused=false;generationState="idle";lastSentAt=0;saveState();maybeRunQueue();};
+    panel.querySelector("#cq-run").onclick=()=>{state.queueBlocked=false;generationState="idle";lastSentAt=0;saveState();maybeRunQueue();};
     panel.querySelector("#cq-test").onclick=()=>notify(`ChatGPT test — ${chatLabel()}`,"Notifications are working.",true);
     const drop=panel.querySelector("#cq-drop"); drop.onclick=()=>filePicker.click();
     filePicker.onchange=async e=>{await addFiles(e.target.files);filePicker.value="";};
@@ -900,17 +897,17 @@
   }
   async function addDraftToQueue(){
     const text=input.value.trim();if(!text&&!draftImages.length)return;
-    state.queue.push({id:makeId("q"),text,images:draftImages.map(x=>({...x})),addedAt:Date.now()});input.value="";draftImages=[];state.paused=false;saveState();renderDraft();if(generationState==="idle")maybeRunQueue();
+    state.queue.push({id:makeId("q"),text,images:draftImages.map(x=>({...x})),addedAt:Date.now()});input.value="";draftImages=[];state.queueBlocked=false;saveState();renderDraft();if(generationState==="idle")maybeRunQueue();
   }
   async function clearQueue(){
     for(const item of state.queue)for(const img of item.images||[])try{await dbDelete(img.id);}catch{}
-    state.queue=[];state.activeQueueItemId=null;batchActive=false;batchCompleted=0;awaitingFinalResponse=false;saveState();
+    state.queue=[];state.activeQueueItemId=null;state.queueBlocked=false;batchActive=false;batchCompleted=0;awaitingFinalResponse=false;saveState();
   }
   async function removeQueueItem(index){const item=state.queue[index];if(!item)return;if(item.id===state.activeQueueItemId)return;for(const img of item.images||[])try{await dbDelete(img.id);}catch{}state.queue.splice(index,1);saveState();}
   function moveQueueItem(index,dir){const target=index+dir;if(target<0||target>=state.queue.length)return;const current=state.queue[index],other=state.queue[target];if(current?.id===state.activeQueueItemId||other?.id===state.activeQueueItemId)return;[state.queue[index],state.queue[target]]=[state.queue[target],state.queue[index]];saveState();}
 
   function render(){
-    if(!panel)return;statusEl.textContent=`${state.paused?"Paused":"Active"} · ${currentStatus()} · ${state.queue.length} queued`;panel.querySelector("#cq-pause").textContent=state.paused?"Resume":"Pause";listEl.innerHTML="";
+    if(!panel)return;statusEl.textContent=`${currentStatus()} · ${state.queue.length} queued`;listEl.innerHTML="";
     state.queue.forEach((item,i)=>{const row=document.createElement("div");Object.assign(row.style,{display:"flex",gap:"8px",padding:"9px 0",borderTop:"1px solid #303030"});const body=document.createElement("div");body.style.flex="1";body.style.minWidth="0";const title=document.createElement("div");title.style.whiteSpace="nowrap";title.style.overflow="hidden";title.style.textOverflow="ellipsis";title.textContent=`${i+1}. ${item.id===state.activeQueueItemId?"▶ Running · ":""}${item.text||"(images only)"}`;body.appendChild(title);if(item.images?.length){const meta=document.createElement("div");meta.style.cssText="font-size:11px;color:#999;margin-top:3px";meta.textContent=`Image × ${item.images.length}`;body.appendChild(meta);}const controls=document.createElement("div");controls.style.display="flex";controls.style.gap="3px";controls.innerHTML=`<button style="${buttonCss()}">↑</button><button style="${buttonCss()}">↓</button><button style="${buttonCss()}">×</button>`;const bs=controls.querySelectorAll("button");const locked=item.id===state.activeQueueItemId;bs.forEach(b=>{b.disabled=locked;b.style.opacity=locked?".35":"1";});bs[0].onclick=()=>moveQueueItem(i,-1);bs[1].onclick=()=>moveQueueItem(i,1);bs[2].onclick=()=>removeQueueItem(i);row.append(body,controls);listEl.appendChild(row);});
     renderSettings();updateHeaderButton();
   }
@@ -997,3 +994,7 @@
     headerButton.type="button";
     headerButton.setAttribute("aria-label","ChatGPT Queue");
     headerButton.title="ChatGPT Queue";
+
+    Object.assign(headerButton.style,{
+      display:"inline-flex",
+      alignItems:"center",
