@@ -684,13 +684,30 @@
       const completedCount = batchCompleted;
       batchCompleted = 0;
       reportStatus();
-      notify(`Queue finished — ${chatLabel()}`, `${completedCount} queued task${completedCount === 1 ? "" : "s"} completed.`);
+      notify(
+        `Queue complete — ${chatLabel()}`,
+        `All ${completedCount} queued task${completedCount === 1 ? "" : "s"} completed · 0 remaining.`
+      );
       return;
     }
-    if (state.queue.length) { maybeRunQueue(); return; }
+
+    if (state.queue.length) {
+      const remaining = state.queue.length;
+      const completed = batchActive ? batchCompleted : 0;
+      const title = batchActive
+        ? `Queue progress — ${chatLabel()}`
+        : `Response finished — ${chatLabel()}`;
+      const message = batchActive
+        ? `${completed} completed · ${remaining} queue${remaining === 1 ? "" : "s"} remaining · continuing.`
+        : `${remaining} queue${remaining === 1 ? "" : "s"} remaining · queue starting.`;
+      notify(title, message);
+      maybeRunQueue();
+      return;
+    }
+
     markDone();
     reportStatus();
-    notify(`ChatGPT finished — ${chatLabel()}`, "The current response has completed.");
+    notify(`ChatGPT finished — ${chatLabel()}`, "Response completed · no queue remaining.");
   }
 
   function updateGenerationState() {
@@ -981,20 +998,3 @@
     if(!headerButton||!headerButton.isConnected)ensureHeaderButton();
     else updateHeaderButton();
   },CFG.headerCheckMs);
-
-  function cqHandleRouteChange(){
-    setTimeout(()=>{
-      headerButton=null;
-      ensureHeaderButton();
-      attachComposerObserver();
-      startTitleGuard();
-      reportStatus();
-    },150);
-  }
-
-  window.addEventListener("popstate",cqHandleRouteChange);
-  window.addEventListener("hashchange",cqHandleRouteChange);
-
-  const cqPushState=history.pushState;
-  history.pushState=function(...args){
-    const result=cqPushState.apply(this,args);
