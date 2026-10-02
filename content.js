@@ -974,13 +974,7 @@
 
   function updateHeaderButton(){
     if(!headerButton||!headerButton.isConnected)return;
-    if(state.paused){
-      headerButton.textContent=`⏸ Queue${state.queue.length?` ${state.queue.length}`:""}`;
-    }else if(state.doneUnread && !state.queue.length && generationState==="idle"){
-      headerButton.textContent="✓ Done";
-    }else{
-      headerButton.textContent=state.queue.length?`Queue ${state.queue.length}`:"Queue";
-    }
+    headerButton.textContent=state.queue.length?`Queue ${state.queue.length}`:"Queue";
   }
 
   setInterval(()=>{
@@ -997,3 +991,10 @@
       reportStatus();
     },150);
   }
+
+  window.addEventListener("popstate",cqHandleRouteChange);
+  window.addEventListener("hashchange",cqHandleRouteChange);
+
+  const cqPushState=history.pushState;
+  history.pushState=function(...args){
+    const result=cqPushState.apply(this,args);
