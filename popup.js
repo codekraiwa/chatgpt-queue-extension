@@ -112,7 +112,6 @@ function esc(s = "") {
 }
 
 function normalizedStatus(tab) {
-  if (tab.paused) return "paused";
   if (["working","finishing","sending"].includes(tab.status)) return "working";
   if (tab.doneUnread || tab.status === "done") return "done";
   if (tab.queueCount > 0) return "queued";
@@ -176,7 +175,6 @@ function formatLastFinished(ts) {
 function sectionFor(tab) {
   if (tab.active) return "current";
   if (
-    tab.paused ||
     tab.queueCount > 0 ||
     ["working","finishing","sending","done"].includes(tab.status) ||
     tab.doneUnread
@@ -234,7 +232,6 @@ function makeCard(tab) {
     "card",
     tab.active ? "current" : "",
     ["working","queued","done"].includes(status) ? "active-card" : "",
-    status === "paused" ? "paused-card" : ""
   ].filter(Boolean).join(" ");
 
   const queueMeta = tab.queueCount > 0
@@ -279,7 +276,7 @@ function makeCard(tab) {
   queueBtn.onclick = () => openQueuePanel(tab.tabId);
   actions.appendChild(queueBtn);
 
-  if (tab.queueCount > 0 && !tab.paused) {
+  if (tab.queueCount > 0) {
     const runBtn = document.createElement("button");
     runBtn.className = "action-button run";
     runBtn.textContent = "Run next";
@@ -287,22 +284,6 @@ function makeCard(tab) {
     actions.appendChild(runBtn);
   }
 
-  if (tab.paused) {
-    const resumeBtn = document.createElement("button");
-    resumeBtn.className = "action-button resume";
-    resumeBtn.textContent = "Resume";
-    resumeBtn.onclick = () => command(tab.tabId, "resume");
-    actions.appendChild(resumeBtn);
-  } else if (
-    tab.queueCount > 0 ||
-    ["working","finishing","sending"].includes(tab.status)
-  ) {
-    const pauseBtn = document.createElement("button");
-    pauseBtn.className = "action-button pause";
-    pauseBtn.textContent = "Pause";
-    pauseBtn.onclick = () => command(tab.tabId, "pause");
-    actions.appendChild(pauseBtn);
-  }
 
   return card;
 }
@@ -325,7 +306,6 @@ function addSection(title, tabs) {
 function sortTabs(tabs) {
   const rank = t => {
     let score = 0;
-    if (t.paused) score += 500;
     if (["working","finishing","sending"].includes(t.status)) score += 400;
     if (t.queueCount > 0) score += 300 + Number(t.queueCount || 0);
     if (t.doneUnread || t.status === "done") score += 200;
