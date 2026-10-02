@@ -85,6 +85,6 @@ async function playBeep(msg = {}) {
       cursor += pattern(preset, ctx, master, cursor, voiceLevel) + 0.10;
     }
   } catch (err) {
-    console.warn("ChatGPT Queue: offscreen beep error", err);
+    console.warn("Prompt & Leave, ChatGPT Queue: offscreen beep error", err);
   }
 }
