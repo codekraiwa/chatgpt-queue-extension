@@ -992,8 +992,8 @@
     headerButton=document.createElement("button");
     headerButton.id="cq-extension-header";
     headerButton.type="button";
-    headerButton.setAttribute("aria-label","ChatGPT Queue");
-    headerButton.title="ChatGPT Queue";
+    headerButton.setAttribute("aria-label","Prompt & Leave, ChatGPT Queue");
+    headerButton.title="Prompt & Leave, ChatGPT Queue";
 
     Object.assign(headerButton.style,{
       display:"inline-flex",
