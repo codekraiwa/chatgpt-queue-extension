@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Queue",
-  "version": "1.9.1",
-  "description": "ChatGPT prompt queue with strict FIFO execution and simplified queue controls.",
+  "name": "Prompt & Leave, ChatGPT Queue",
+  "version": "1.9.2",
+  "description": "Prompt & Leave queues ChatGPT prompts in strict FIFO order, tracks multiple tabs, and alerts you when work is done.",
   "permissions": [
     "storage",
     "notifications",
@@ -18,7 +18,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "ChatGPT Queue",
+    "default_title": "Prompt & Leave, ChatGPT Queue",
     "default_popup": "popup.html"
   },
   "content_scripts": [
