@@ -468,11 +468,49 @@
     }
   });
 
+  function isQueueUiElement(el) {
+    return !!(el && el.closest && el.closest("#cq-extension-panel"));
+  }
+
   function getComposer() {
-    return document.querySelector("#prompt-textarea")
-      || document.querySelector('[contenteditable="true"][data-virtualkeyboard="true"]')
-      || document.querySelector('textarea[placeholder*="Message"]')
-      || document.querySelector("textarea");
+    const selectors = [
+      "#prompt-textarea",
+      '[contenteditable="true"][data-virtualkeyboard="true"]',
+      'textarea[placeholder*="Message"]'
+    ];
+
+    for (const selector of selectors) {
+      for (const el of document.querySelectorAll(selector)) {
+        if (!isQueueUiElement(el)) return el;
+      }
+    }
+
+    // Never fall back to the extension's own queue textarea. If ChatGPT
+    // changes its composer markup, failing safely is better than overwriting
+    // whatever the user is currently typing in Prompt Queue.
+    return [...document.querySelectorAll("textarea")].find(el => !isQueueUiElement(el)) || null;
+  }
+
+  function captureQueueEditorFocus() {
+    const active = document.activeElement;
+    if (!active || !panel || !panel.contains(active)) return null;
+
+    const snapshot = { element: active };
+    if (typeof active.selectionStart === "number") {
+      snapshot.selectionStart = active.selectionStart;
+      snapshot.selectionEnd = active.selectionEnd;
+    }
+    return snapshot;
+  }
+
+  function restoreQueueEditorFocus(snapshot) {
+    const el = snapshot?.element;
+    if (!el || !el.isConnected || !panel?.contains(el)) return;
+
+    try { el.focus({ preventScroll: true }); } catch { try { el.focus(); } catch {} }
+    if (typeof snapshot.selectionStart === "number" && typeof el.setSelectionRange === "function") {
+      try { el.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd); } catch {}
+    }
   }
   function getSendButton() {
     return document.getElementById("composer-submit-button")
@@ -536,10 +574,16 @@
     try { chrome.runtime.sendMessage({ type:"CQ_NOTIFY", title, message }); } catch {}
   }
 
-  function setComposerText(text) {
+  function setComposerText(text, focusSnapshot = null) {
     const composer = getComposer();
-    if (!composer) throw new Error("ChatGPT composer not found");
-    composer.focus();
+    if (!composer || isQueueUiElement(composer)) throw new Error("ChatGPT composer not found");
+
+    // ChatGPT sometimes needs its composer focused for React to accept the
+    // programmatic input. Focus it only synchronously, then immediately return
+    // focus/caret to the Queue editor so background auto-send never steals
+    // the user's typing destination.
+    try { composer.focus({ preventScroll: true }); } catch { try { composer.focus(); } catch {} }
+
     if (composer.isContentEditable) {
       composer.innerHTML = "";
       text.split("\n").forEach((line, i) => {
@@ -547,16 +591,18 @@
         composer.appendChild(document.createTextNode(line));
       });
       composer.dispatchEvent(new InputEvent("input", { bubbles:true, inputType:"insertText", data:text }));
-      return;
+    } else {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")?.set;
+      if (setter) setter.call(composer,text); else composer.value = text;
+      composer.dispatchEvent(new Event("input",{bubbles:true}));
+      composer.dispatchEvent(new Event("change",{bubbles:true}));
     }
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")?.set;
-    if (setter) setter.call(composer,text); else composer.value = text;
-    composer.dispatchEvent(new Event("input",{bubbles:true}));
-    composer.dispatchEvent(new Event("change",{bubbles:true}));
+
+    restoreQueueEditorFocus(focusSnapshot);
   }
 
   function getFileInput() {
-    const inputs = [...document.querySelectorAll('input[type="file"]')];
+    const inputs = [...document.querySelectorAll('input[type="file"]')].filter(x => !isQueueUiElement(x));
     return inputs.find(x => (x.accept||"").includes("image") || (x.accept||"").includes("*/*")) || inputs[0] || null;
   }
   function attachmentCount() {
@@ -585,22 +631,39 @@
 
   async function sendItem(item) {
     if (sending) return false;
+    const focusSnapshot = captureQueueEditorFocus();
     sending = true; render(); reportStatus();
     try {
       const records = [];
       for (const meta of item.images || []) {
         const r = await dbGet(meta.id); if (!r) throw new Error(`Missing image: ${meta.name}`); records.push(r);
       }
-      if (records.length) await uploadImages(records);
-      if (item.text?.trim()) setComposerText(item.text);
+      if (records.length) {
+        await uploadImages(records);
+        restoreQueueEditorFocus(focusSnapshot);
+      }
+      if (item.text?.trim()) setComposerText(item.text, focusSnapshot);
       await sleep(500);
+      restoreQueueEditorFocus(focusSnapshot);
       let send = getSendButton(), start = Date.now();
-      while ((!send || send.disabled) && Date.now() - start < 10000) { await sleep(300); send = getSendButton(); }
+      while ((!send || send.disabled) && Date.now() - start < 10000) {
+        await sleep(300);
+        restoreQueueEditorFocus(focusSnapshot);
+        send = getSendButton();
+      }
       if (!send || send.disabled) throw new Error("ChatGPT Send button unavailable");
-      send.click(); lastSentAt = Date.now(); return true;
+      send.click();
+      restoreQueueEditorFocus(focusSnapshot);
+      queueMicrotask(() => restoreQueueEditorFocus(focusSnapshot));
+      setTimeout(() => restoreQueueEditorFocus(focusSnapshot), 60);
+      lastSentAt = Date.now();
+      return true;
     } catch (err) {
       state.paused = true; saveState(); notify(`Queue paused — ${chatLabel()}`, err.message || "Queue send failed", true); return false;
-    } finally { sending = false; render(); reportStatus(); }
+    } finally {
+      restoreQueueEditorFocus(focusSnapshot);
+      sending = false; render(); reportStatus();
+    }
   }
 
   async function maybeRunQueue() {
@@ -934,40 +997,3 @@
       reportStatus();
     },150);
   }
-
-  window.addEventListener("popstate",cqHandleRouteChange);
-  window.addEventListener("hashchange",cqHandleRouteChange);
-
-  const cqPushState=history.pushState;
-  history.pushState=function(...args){
-    const result=cqPushState.apply(this,args);
-    cqHandleRouteChange();
-    return result;
-  };
-
-  const cqReplaceState=history.replaceState;
-  history.replaceState=function(...args){
-    const result=cqReplaceState.apply(this,args);
-    cqHandleRouteChange();
-    return result;
-  };
-  function showPanel(){createPanel();panel.style.display="block";render();setTimeout(()=>input?.focus(),0);}
-  function hidePanel(){if(panel)panel.style.display="none";}
-  function togglePanel(){createPanel();panel.style.display=(!panel.style.display||panel.style.display==="none")?"block":"none";render();}
-
-  chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
-    if(msg.type==="CQ_GLOBAL_SETTINGS_CHANGED"){
-      applyGlobalSettings(msg.settings || {});
-      sendResponse?.({ok:true});
-      return;
-    }
-    if(msg.type!=="CQ_COMMAND")return;
-    if(msg.command==="togglePanel"){togglePanel();sendResponse({ok:true});}
-    else if(msg.command==="runNext"){state.paused=false;generationState="idle";lastSentAt=0;saveState();maybeRunQueue();sendResponse({ok:true});}
-    else if(msg.command==="pause"){state.paused=true;saveState();sendResponse({ok:true});}
-    else if(msg.command==="resume"){state.paused=false;saveState();maybeRunQueue();sendResponse({ok:true});}
-    else if(msg.command==="ackDone"){markDoneSeen();sendResponse({ok:true});}
-  });
-
-  openDB().then(()=>{loadGlobalSettings();ensureHeaderButton();attachComposerObserver();startTitleGuard();startFaviconGuard();renderBrowserTabTitle();renderStatusFavicon();reportStatus();});
-})();
