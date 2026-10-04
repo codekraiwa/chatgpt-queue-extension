@@ -1,5 +1,8 @@
+<p align="center">
+  <img src="icon128.png" alt="Prompt & Leave, ChatGPT Queue" width="128" height="128">
+</p>
+
 # Prompt & Leave, ChatGPT Queue
-# Keep ChatGPT moving.
 
 **Queue prompts. Leave the tab. Come back when it is done.**
 
