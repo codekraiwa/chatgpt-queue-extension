@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompt & Leave, ChatGPT Queue",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "Prompt & Leave queues ChatGPT prompts in strict FIFO order, tracks multiple tabs, and alerts you when work is done.",
   "permissions": [
     "storage",
@@ -19,7 +19,13 @@
   },
   "action": {
     "default_title": "Prompt & Leave, ChatGPT Queue",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   },
   "content_scripts": [
     {
@@ -32,5 +38,11 @@
       ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
 }
