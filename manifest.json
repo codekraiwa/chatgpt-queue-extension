@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompt & Leave, ChatGPT Queue",
-  "version": "1.9.3",
+  "version": "1.9.4",
   "description": "Prompt & Leave queues ChatGPT prompts in strict FIFO order, tracks multiple tabs, and alerts you when work is done.",
   "permissions": [
     "storage",
