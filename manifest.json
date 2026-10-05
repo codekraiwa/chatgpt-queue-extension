@@ -1,18 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Prompt & Leave, ChatGPT Queue",
-  "version": "1.9.4",
+  "version": "1.9.5",
   "description": "Prompt & Leave queues ChatGPT prompts in strict FIFO order, tracks multiple tabs, and alerts you when work is done.",
   "permissions": [
     "storage",
     "notifications",
-    "tabs",
-    "unlimitedStorage",
     "offscreen"
   ],
   "host_permissions": [
-    "https://chatgpt.com/*",
-    "https://chat.openai.com/*"
+    "https://chatgpt.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -30,8 +27,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://chatgpt.com/*",
-        "https://chat.openai.com/*"
+        "https://chatgpt.com/*"
       ],
       "js": [
         "content.js"
