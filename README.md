@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icon256.png" alt="Prompt & Leave, ChatGPT Queue" width="160" height="160">
+  <img src="./icon128.png" alt="Prompt & Leave, ChatGPT Queue" width="128" height="128">
 </p>
 
 # Prompt & Leave, ChatGPT Queue
