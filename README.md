@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icon128.png" alt="Prompt & Leave, ChatGPT Queue" width="128" height="128">
+  <img src="icon256.png" alt="Prompt & Leave, ChatGPT Queue" width="160" height="160">
 </p>
 
 # Prompt & Leave, ChatGPT Queue
@@ -130,7 +130,7 @@ Chrome may also suspend or discard background tabs under heavy memory pressure. 
 
 ## Current version
 
-**v1.9.1**
+**v1.9.4**
 
 Current focus:
 
