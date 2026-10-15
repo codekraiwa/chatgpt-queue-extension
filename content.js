@@ -32,6 +32,7 @@
   let panel = null, input = null, listEl = null, statusEl = null, draftEl = null, filePicker = null, headerButton = null;
   let draftImages = [];
   let sending = false;
+  let submittingQueuedPrompt = false;
   let lastSentAt = 0;
   let generationState = "idle";
   let generationEndedAt = 0;
@@ -94,7 +95,7 @@
     const generatedNewChat = previous === "new-chat" &&
       next.startsWith("conversation:") &&
       !!state.activeQueueItemId &&
-      (sending || (lastSentAt > 0 && Date.now() - lastSentAt < 60000));
+      (submittingQueuedPrompt || (lastSentAt > 0 && Date.now() - lastSentAt < 5000));
 
     if (generatedNewChat && !sessionStorage.getItem(newKey)) {
       // The first queued prompt created a ChatGPT conversation. The queue
@@ -115,6 +116,7 @@
       state = loadState();
       ensureSafeRestoredState();
       sending = false;
+      submittingQueuedPrompt = false;
       batchActive = false;
       batchCompleted = 0;
       awaitingFinalResponse = false;
@@ -811,7 +813,9 @@
       }
       assertRoute();
       if (!send || send.disabled) throw new Error("ChatGPT Send button unavailable");
-      send.click();
+      submittingQueuedPrompt = true;
+      try { send.click(); }
+      finally { submittingQueuedPrompt = false; }
       restoreQueueEditorFocus(focusSnapshot);
       queueMicrotask(() => restoreQueueEditorFocus(focusSnapshot));
       setTimeout(() => restoreQueueEditorFocus(focusSnapshot), 60);
