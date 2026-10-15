@@ -130,6 +130,11 @@ async function drawAttentionForTab(tabId, strong = false) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // Never accept a tab id supplied by page content for queue ownership.
+  if (msg.type === "CQ_IDENTIFY_TAB") {
+    sendResponse?.({ ok: Number.isInteger(sender.tab?.id), tabId: sender.tab?.id ?? null });
+    return;
+  }
   const tabId = sender.tab?.id ?? msg.tabId;
 
   if (msg.type === "CQ_STATUS" && tabId != null) {
