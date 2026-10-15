@@ -12,14 +12,21 @@
     maxImageSizeMB: 25
   };
 
-  const STATE_KEY = "cq_extension_state_v1";
+  // v1 used one origin-wide localStorage key. Every ChatGPT tab could read
+  // and execute another tab's queue. Keep it only for optional manual recovery.
+  const LEGACY_STATE_KEY = "cq_extension_state_v1";
+  const STATE_PREFIX = "cq_extension_state_v2";
+  const TAB_OWNER_KEY = "cq_extension_tab_owner_v2";
   const SETTINGS_KEY = "cq_extension_settings_v1";
   const DB_NAME = "ChatGPTQueueExtensionDB";
   const DB_VERSION = 1;
   const STORE = "images";
 
-  let state = loadState();
-  if ("paused" in state) { delete state.paused; localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
+  let state = defaults();
+  let queueReady = false;
+  let ownerTabId = null;
+  let conversationKey = conversationFromUrl();
+  let routeEpoch = 0;
   let settings = loadSettings();
   let dbPromise = null;
   let panel = null, input = null, listEl = null, statusEl = null, draftEl = null, filePicker = null, headerButton = null;
@@ -38,10 +45,146 @@
   function defaults() { return { queue: [], queueBlocked: false, lastFinishedAt: 0, doneUnread: false, activeQueueItemId: null }; }
   function defaultSettings() { return { notifyWhenFinished:true, notifyOnlyWhenInactive:false, showStatusInTab:true, showStatusFavicon:true, playSound:true, soundEngineVersion:2 }; }
 
-  function loadState() {
-    try { return { ...defaults(), ...(JSON.parse(localStorage.getItem(STATE_KEY) || "{}")) }; }
-    catch { return defaults(); }
+  function conversationFromUrl() {
+    // ChatGPT's SPA can navigate between conversations without reloading.
+    const path = decodeURIComponent(location.pathname || "/");
+    const match = path.match(/(?:^|\/)c\/([a-zA-Z0-9_-]+)(?:\/|$)/);
+    if (match) return `conversation:${match[1]}`;
+    // A new/unsaved chat has no conversation id yet.
+    if (path === "/" || path === "/chat" || path === "/chat/") return "new-chat";
+    return `page:${path}`;
   }
+
+  function scopedStateKey(route = conversationKey) {
+    if (!Number.isInteger(ownerTabId)) return null;
+    return `${STATE_PREFIX}_tab_${ownerTabId}_${encodeURIComponent(route)}`;
+  }
+
+  function loadState() {
+    if (!queueReady) return defaults();
+    try {
+      const loaded = JSON.parse(sessionStorage.getItem(scopedStateKey()) || "{}");
+      return { ...defaults(), ...loaded, queue: Array.isArray(loaded.queue) ? loaded.queue : [] };
+    } catch { return defaults(); }
+  }
+
+  function persistState() {
+    if (!queueReady) return;
+    sessionStorage.setItem(scopedStateKey(), JSON.stringify(state));
+  }
+
+  function ensureSafeRestoredState() {
+    // After an extension reload an in-flight send cannot be confirmed.
+    // Stop instead of risking duplicate submissions.
+    if (state.activeQueueItemId) {
+      state.activeQueueItemId = null;
+      state.queueBlocked = true;
+      persistState();
+    }
+  }
+
+  function syncConversation() {
+    if (!queueReady) return false;
+    const next = conversationFromUrl();
+    if (next === conversationKey) return true;
+
+    const previous = conversationKey;
+    const oldKey = scopedStateKey(previous);
+    const newKey = scopedStateKey(next);
+    const generatedNewChat = previous === "new-chat" &&
+      next.startsWith("conversation:") &&
+      !!state.activeQueueItemId &&
+      (sending || (lastSentAt > 0 && Date.now() - lastSentAt < 60000));
+
+    if (generatedNewChat && !sessionStorage.getItem(newKey)) {
+      // The first queued prompt created a ChatGPT conversation. The queue
+      // follows that new conversation, but NEVER follows an unrelated route.
+      sessionStorage.setItem(newKey, JSON.stringify(state));
+      sessionStorage.removeItem(oldKey);
+      conversationKey = next;
+    } else {
+      // A user changed conversations. Freeze any in-flight queue for the old
+      // conversation, and load only the queue assigned to the new route.
+      if (state.activeQueueItemId || sending) {
+        state.queueBlocked = true;
+        state.activeQueueItemId = null;
+      }
+      persistState();
+      conversationKey = next;
+      routeEpoch++;
+      state = loadState();
+      ensureSafeRestoredState();
+      sending = false;
+      batchActive = false;
+      batchCompleted = 0;
+      awaitingFinalResponse = false;
+      lastSentAt = 0;
+      generationState = "idle";
+      generationEndedAt = 0;
+      completionSignature = "";
+      // Do not carry any unsubmitted image draft into another conversation.
+      draftImages = [];
+      if (input) input.value = "";
+      renderDraft();
+    }
+
+    render();
+    renderBrowserTabTitle();
+    renderStatusFavicon();
+    reportStatus();
+    return true;
+  }
+
+  function sameRoute(epoch) {
+    syncConversation();
+    return queueReady && routeEpoch === epoch;
+  }
+
+  function legacyQueueCount() {
+    try {
+      const old = JSON.parse(localStorage.getItem(LEGACY_STATE_KEY) || "{}");
+      return Array.isArray(old.queue) ? old.queue.length : 0;
+    } catch { return 0; }
+  }
+
+  async function restoreLegacyQueue() {
+    if (!syncConversation()) return;
+    const old = JSON.parse(localStorage.getItem(LEGACY_STATE_KEY) || "{}");
+    const items = Array.isArray(old.queue) ? old.queue : [];
+    if (!items.length) { render(); return; }
+    if (!confirm(`Recover ${items.length} queue item(s) from the old shared storage into THIS chat? Review the list before running: some prompts may already have been sent.`)) return;
+    // Never auto-run migrated prompts. The old origin-wide data did not
+    // record which tab owned them or whether the active prompt was sent.
+    state.queue.push(...items.filter(item => !state.queue.some(q => q.id === item.id)));
+    state.queueBlocked = true;
+    state.activeQueueItemId = null;
+    persistState();
+    localStorage.removeItem(LEGACY_STATE_KEY);
+    render();
+    reportStatus();
+  }
+
+  function identifyTab() {
+    chrome.runtime.sendMessage({ type: "CQ_IDENTIFY_TAB" }, response => {
+      if (chrome.runtime.lastError || !Number.isInteger(response?.tabId)) {
+        console.error("Prompt & Leave: cannot verify Chrome tab identity. Queue execution disabled.");
+        return;
+      }
+      ownerTabId = response.tabId;
+      // sessionStorage may be cloned by Chrome's Duplicate Tab feature.
+      // The state key includes the real browser tab id, so clones stay empty.
+      sessionStorage.setItem(TAB_OWNER_KEY, String(ownerTabId));
+      conversationKey = conversationFromUrl();
+      queueReady = true;
+      state = loadState();
+      ensureSafeRestoredState();
+      render();
+      renderBrowserTabTitle();
+      renderStatusFavicon();
+      reportStatus();
+    });
+  }
+
   function loadSettings() {
     try {
       const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
@@ -60,7 +203,8 @@
     }
   }
   function saveState() {
-    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    if (!syncConversation()) return;
+    persistState();
     render();
     renderBrowserTabTitle();
     renderStatusFavicon();
@@ -431,21 +575,23 @@
   }
 
   function markDone() {
+    if (!syncConversation()) return;
     state.lastFinishedAt = Date.now();
     state.doneUnread = true;
-    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    persistState();
     renderBrowserTabTitle();
     updateHeaderButton();
   }
 
   function markDoneSeen() {
+    if (!syncConversation()) return;
     if (!state.doneUnread) {
       renderBrowserTabTitle();
       return;
     }
 
     state.doneUnread = false;
-    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    persistState();
     renderBrowserTabTitle();
     updateHeaderButton();
     reportStatus();
@@ -558,6 +704,7 @@
     return "idle";
   }
   function reportStatus() {
+    if (!queueReady) return;
     try {
       chrome.runtime.sendMessage({ type:"CQ_STATUS", title:chatLabel(), queueCount:state.queue.length, status:currentStatus(), paused:false, lastFinishedAt:state.lastFinishedAt||0, doneUnread:!!state.doneUnread });
     } catch {}
@@ -630,27 +777,39 @@
   }
 
   async function sendItem(item) {
-    if (sending) return false;
+    if (sending || !syncConversation()) return false;
+    const epoch = routeEpoch;
+    const expectedState = state;
+    const assertRoute = () => {
+      if (!sameRoute(epoch) || state !== expectedState)
+        throw new Error("Queue canceled: ChatGPT conversation changed before sending.");
+    };
     const focusSnapshot = captureQueueEditorFocus();
     sending = true; render(); reportStatus();
     try {
       const records = [];
       for (const meta of item.images || []) {
-        const r = await dbGet(meta.id); if (!r) throw new Error(`Missing image: ${meta.name}`); records.push(r);
+        assertRoute();
+        const r = await dbGet(meta.id); assertRoute(); if (!r) throw new Error(`Missing image: ${meta.name}`); records.push(r);
       }
       if (records.length) {
         await uploadImages(records);
+        assertRoute();
         restoreQueueEditorFocus(focusSnapshot);
       }
+      assertRoute();
       if (item.text?.trim()) setComposerText(item.text, focusSnapshot);
       await sleep(500);
+      assertRoute();
       restoreQueueEditorFocus(focusSnapshot);
       let send = getSendButton(), start = Date.now();
       while ((!send || send.disabled) && Date.now() - start < 10000) {
         await sleep(300);
+        assertRoute();
         restoreQueueEditorFocus(focusSnapshot);
         send = getSendButton();
       }
+      assertRoute();
       if (!send || send.disabled) throw new Error("ChatGPT Send button unavailable");
       send.click();
       restoreQueueEditorFocus(focusSnapshot);
@@ -659,14 +818,24 @@
       lastSentAt = Date.now();
       return true;
     } catch (err) {
-      state.queueBlocked = true; saveState(); notify(`Queue stopped — ${chatLabel()}`, err.message || "Queue send failed", true); return false;
+      if (sameRoute(epoch) && state === expectedState) {
+        state.queueBlocked = true;
+        saveState();
+        notify(`Queue stopped — ${chatLabel()}`, err.message || "Queue send failed", true);
+      }
+      return false;
     } finally {
-      restoreQueueEditorFocus(focusSnapshot);
-      sending = false; render(); reportStatus();
+      if (sameRoute(epoch) && state === expectedState) {
+        restoreQueueEditorFocus(focusSnapshot);
+        sending = false;
+        render();
+        reportStatus();
+      }
     }
   }
 
   async function maybeRunQueue() {
+    if (!syncConversation()) return;
     if (state.queueBlocked || sending || !state.queue.length) return;
     if (state.activeQueueItemId) return;
     if (generationState === "working" || isGenerating()) return;
@@ -680,7 +849,9 @@
     state.activeQueueItemId = item.id;
     saveState();
 
+    const epoch = routeEpoch;
     const ok = await sendItem(item);
+    if (!sameRoute(epoch)) return;
     if (!ok) {
       state.activeQueueItemId = null;
       saveState();
@@ -718,7 +889,11 @@
   }
 
   async function onResponseFinished() {
+    if (!syncConversation()) return;
+    const epoch = routeEpoch;
+    const ownerState = state;
     const completedItem = await completeActiveQueueItem();
+    if (!sameRoute(epoch) || state !== ownerState) return;
 
     if (completedItem) {
       if (!state.queue.length) {
@@ -761,6 +936,7 @@
   }
 
   function updateGenerationState() {
+    if (!syncConversation()) return;
     const busy = isGenerating();
 
     if (busy) {
@@ -771,7 +947,7 @@
         generationState = "working";
         if (state.doneUnread) {
           state.doneUnread = false;
-          localStorage.setItem(STATE_KEY, JSON.stringify(state));
+          persistState();
         }
         renderBrowserTabTitle();
         renderStatusFavicon();
@@ -818,6 +994,7 @@
   }
 
   setInterval(() => {
+    if (!syncConversation()) return;
     updateGenerationState();
     if (generationState === "idle" && state.queue.length) maybeRunQueue();
     if (document.title !== lastKnownTitle) {
@@ -860,6 +1037,7 @@
       <div id="cq-draft" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:8px"></div>
       <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"><button id="cq-add" style="${buttonCss(true)}">Add</button><button id="cq-clear" style="${buttonCss()}">Clear</button><button id="cq-run" style="${buttonCss()}">Run Next</button></div>
       <div id="cq-status" style="margin-top:11px;color:#aaa;font-size:12px"></div>
+      <button id="cq-restore-legacy" style="${buttonCss()};display:none;margin-top:7px">Recover old queue (manual)</button>
       <div id="cq-list" style="margin-top:9px;max-height:220px;overflow:auto"></div>
       <div style="margin-top:13px;padding-top:12px;border-top:1px solid #333"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><strong>Notifications</strong><button id="cq-test" style="${buttonCss()}">Test</button></div><div id="cq-settings"></div></div>`;
     document.body.appendChild(panel);
@@ -868,7 +1046,8 @@
     panel.querySelector("#cq-close").onclick=hidePanel;
     panel.querySelector("#cq-add").onclick=addDraftToQueue;
     panel.querySelector("#cq-clear").onclick=clearQueue;
-    panel.querySelector("#cq-run").onclick=()=>{state.queueBlocked=false;generationState="idle";lastSentAt=0;saveState();maybeRunQueue();};
+    panel.querySelector("#cq-run").onclick=()=>{if(!syncConversation())return;state.queueBlocked=false;generationState="idle";lastSentAt=0;saveState();maybeRunQueue();};
+    panel.querySelector("#cq-restore-legacy").onclick=restoreLegacyQueue;
     panel.querySelector("#cq-test").onclick=()=>notify(`ChatGPT test — ${chatLabel()}`,"Notifications are working.",true);
     const drop=panel.querySelector("#cq-drop"); drop.onclick=()=>filePicker.click();
     filePicker.onchange=async e=>{await addFiles(e.target.files);filePicker.value="";};
@@ -879,13 +1058,17 @@
   }
 
   async function addFiles(files) {
+    if (!syncConversation()) return;
+    const epoch = routeEpoch;
     const imgs=[...files].filter(f=>f.type.startsWith("image/")), room=CFG.maxImagesPerItem-draftImages.length;
     for(const f of imgs.slice(0,room)){
       if(f.size>CFG.maxImageSizeMB*1024*1024){alert(`${f.name} is larger than ${CFG.maxImageSizeMB} MB.`);continue;}
       const id=makeId("img"), rec={id,name:f.name||`image-${Date.now()}.png`,type:f.type||"image/png",size:f.size,blob:f};
-      await dbPut(rec); draftImages.push({id:rec.id,name:rec.name,type:rec.type,size:rec.size});
+      await dbPut(rec);
+      if (!sameRoute(epoch)) return;
+      draftImages.push({id:rec.id,name:rec.name,type:rec.type,size:rec.size});
     }
-    renderDraft();
+    if (sameRoute(epoch)) renderDraft();
   }
   async function renderDraft(){
     if(!draftEl)return;draftEl.innerHTML="";
@@ -896,18 +1079,34 @@
     }
   }
   async function addDraftToQueue(){
+    if (!syncConversation()) return;
     const text=input.value.trim();if(!text&&!draftImages.length)return;
     state.queue.push({id:makeId("q"),text,images:draftImages.map(x=>({...x})),addedAt:Date.now()});input.value="";draftImages=[];state.queueBlocked=false;saveState();renderDraft();if(generationState==="idle")maybeRunQueue();
   }
   async function clearQueue(){
-    for(const item of state.queue)for(const img of item.images||[])try{await dbDelete(img.id);}catch{}
+    if (!syncConversation()) return;
+    const oldItems = state.queue;
+    // Clear synchronously so an async IndexedDB deletion cannot affect a
+    // different conversation when the user switches routes.
     state.queue=[];state.activeQueueItemId=null;state.queueBlocked=false;batchActive=false;batchCompleted=0;awaitingFinalResponse=false;saveState();
+    for(const item of oldItems)for(const img of item.images||[])try{await dbDelete(img.id);}catch{}
   }
-  async function removeQueueItem(index){const item=state.queue[index];if(!item)return;if(item.id===state.activeQueueItemId)return;for(const img of item.images||[])try{await dbDelete(img.id);}catch{}state.queue.splice(index,1);saveState();}
-  function moveQueueItem(index,dir){const target=index+dir;if(target<0||target>=state.queue.length)return;const current=state.queue[index],other=state.queue[target];if(current?.id===state.activeQueueItemId||other?.id===state.activeQueueItemId)return;[state.queue[index],state.queue[target]]=[state.queue[target],state.queue[index]];saveState();}
+  async function removeQueueItem(index){
+    if(!syncConversation())return;
+    const item=state.queue[index];if(!item||item.id===state.activeQueueItemId)return;
+    state.queue.splice(index,1);saveState();
+    for(const img of item.images||[])try{await dbDelete(img.id);}catch{}
+  }
+  function moveQueueItem(index,dir){if(!syncConversation())return;const target=index+dir;if(target<0||target>=state.queue.length)return;const current=state.queue[index],other=state.queue[target];if(current?.id===state.activeQueueItemId||other?.id===state.activeQueueItemId)return;[state.queue[index],state.queue[target]]=[state.queue[target],state.queue[index]];saveState();}
 
   function render(){
-    if(!panel)return;statusEl.textContent=`${currentStatus()} · ${state.queue.length} queued`;listEl.innerHTML="";
+    if(!panel)return;
+    statusEl.textContent = queueReady
+      ? `${currentStatus()} · ${state.queue.length} queued${state.queueBlocked ? " · stopped (Run Next to resume)" : ""}`
+      : "Verifying tab identity… Queue execution disabled until ready";
+    const recovery = panel.querySelector("#cq-restore-legacy");
+    if (recovery) recovery.style.display = legacyQueueCount() ? "inline-block" : "none";
+    listEl.innerHTML="";
     state.queue.forEach((item,i)=>{const row=document.createElement("div");Object.assign(row.style,{display:"flex",gap:"8px",padding:"9px 0",borderTop:"1px solid #303030"});const body=document.createElement("div");body.style.flex="1";body.style.minWidth="0";const title=document.createElement("div");title.style.whiteSpace="nowrap";title.style.overflow="hidden";title.style.textOverflow="ellipsis";title.textContent=`${i+1}. ${item.id===state.activeQueueItemId?"▶ Running · ":""}${item.text||"(images only)"}`;body.appendChild(title);if(item.images?.length){const meta=document.createElement("div");meta.style.cssText="font-size:11px;color:#999;margin-top:3px";meta.textContent=`Image × ${item.images.length}`;body.appendChild(meta);}const controls=document.createElement("div");controls.style.display="flex";controls.style.gap="3px";controls.innerHTML=`<button style="${buttonCss()}">↑</button><button style="${buttonCss()}">↓</button><button style="${buttonCss()}">×</button>`;const bs=controls.querySelectorAll("button");const locked=item.id===state.activeQueueItemId;bs.forEach(b=>{b.disabled=locked;b.style.opacity=locked?".35":"1";});bs[0].onclick=()=>moveQueueItem(i,-1);bs[1].onclick=()=>moveQueueItem(i,1);bs[2].onclick=()=>removeQueueItem(i);row.append(body,controls);listEl.appendChild(row);});
     renderSettings();updateHeaderButton();
   }
@@ -998,3 +1197,109 @@
     Object.assign(headerButton.style,{
       display:"inline-flex",
       alignItems:"center",
+      justifyContent:"center",
+      height:"32px",
+      padding:"0 9px",
+      border:"none",
+      borderRadius:"8px",
+      background:"transparent",
+      color:"inherit",
+      font:"inherit",
+      fontWeight:"500",
+      cursor:"pointer",
+      whiteSpace:"nowrap",
+      flex:"0 0 auto"
+    });
+
+    headerButton.onclick=e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      togglePanel();
+    };
+
+    headerButton.onmouseenter=()=>headerButton.style.background="rgba(128,128,128,.12)";
+    headerButton.onmouseleave=()=>headerButton.style.background="transparent";
+
+    const share=container.querySelector(
+      'button[aria-label="Share"],button[aria-label^="Share"],button[data-testid*="share"]'
+    );
+
+    if(share&&share.parentElement===container){
+      container.insertBefore(headerButton,share);
+    }else if(anchor.parentElement===container){
+      container.insertBefore(headerButton,anchor);
+    }else{
+      container.appendChild(headerButton);
+    }
+
+    updateHeaderButton();
+    reportStatus();
+    return true;
+  }
+
+  function updateHeaderButton(){
+    if(!headerButton||!headerButton.isConnected)return;
+    headerButton.textContent=state.queue.length?`Queue ${state.queue.length}`:"Queue";
+  }
+
+  setInterval(()=>{
+    if(!headerButton||!headerButton.isConnected)ensureHeaderButton();
+    else updateHeaderButton();
+  },CFG.headerCheckMs);
+
+  function cqHandleRouteChange(){
+    syncConversation();
+    setTimeout(()=>{
+      syncConversation();
+      headerButton=null;
+      ensureHeaderButton();
+      attachComposerObserver();
+      startTitleGuard();
+      reportStatus();
+    },150);
+  }
+
+  window.addEventListener("popstate",cqHandleRouteChange);
+  window.addEventListener("hashchange",cqHandleRouteChange);
+
+  const cqPushState=history.pushState;
+  history.pushState=function(...args){
+    const result=cqPushState.apply(this,args);
+    cqHandleRouteChange();
+    return result;
+  };
+
+  const cqReplaceState=history.replaceState;
+  history.replaceState=function(...args){
+    const result=cqReplaceState.apply(this,args);
+    cqHandleRouteChange();
+    return result;
+  };
+  function showPanel(){createPanel();panel.style.display="block";render();setTimeout(()=>input?.focus(),0);}
+  function hidePanel(){if(panel)panel.style.display="none";}
+  function togglePanel(){createPanel();panel.style.display=(!panel.style.display||panel.style.display==="none")?"block":"none";render();}
+
+  chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
+    if(msg.type==="CQ_GLOBAL_SETTINGS_CHANGED"){
+      applyGlobalSettings(msg.settings || {});
+      sendResponse?.({ok:true});
+      return;
+    }
+    if(msg.type!=="CQ_COMMAND")return;
+    if(msg.command==="togglePanel"){togglePanel();sendResponse({ok:true});}
+    else if(msg.command==="runNext"){
+      if (!syncConversation()) { sendResponse({ok:false,error:"Tab identity not ready"}); return; }
+      state.queueBlocked=false;generationState="idle";lastSentAt=0;saveState();maybeRunQueue();sendResponse({ok:true});
+    }
+    else if(msg.command==="ackDone"){markDoneSeen();sendResponse({ok:true});}
+  });
+
+  openDB().then(()=>{
+    loadGlobalSettings();
+    ensureHeaderButton();
+    attachComposerObserver();
+    startTitleGuard();
+    startFaviconGuard();
+    identifyTab();
+  });
+})();
